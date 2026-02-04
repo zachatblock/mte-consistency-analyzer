@@ -1070,7 +1070,8 @@ def generate_consistency_plots():
                 'output_dir': output_dir,
                 'summary_path': summary_path,
                 'test_limits_loaded': len(test_limits),
-                'plot_files': plot_files[:10]  # Return first 10 plot paths
+                'plot_files': plot_files[:10],  # Return first 10 plot paths
+                'plot_results': stats_list  # Include plot data with base64 images
             })
             
         finally:
@@ -1201,10 +1202,24 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
     
     plt.tight_layout()
     
+    # Save to buffer for inline display
+    import io
+    import base64
+    
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
+    buffer.seek(0)
+    plot_data = buffer.getvalue()
+    buffer.close()
+    
+    # Also save to file for export functionality
     safe_filename = test_id.replace('/', '_').replace('\\', '_')
     output_path = os.path.join(output_dir, f'{safe_filename}_consistency.png')
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     plt.close()
+    
+    # Convert to base64 for inline display
+    plot_base64 = base64.b64encode(plot_data).decode('utf-8')
     
     return {
         'test_id': test_id,
@@ -1223,5 +1238,54 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
         'usl_violations': usl_violations,
         'lsl_violations': lsl_violations,
         'has_limits': limit_info is not None,
-        'plot_path': output_path
+        'plot_path': output_path,
+        'plot_base64': plot_base64
     }
+
+
+@consistency_bp.route('/export_plots', methods=['POST'])
+def export_plots():
+    """Export all plots from a directory as a ZIP archive"""
+    try:
+        data = request.get_json()
+        output_dir = data.get('output_dir')
+        
+        if not output_dir or not os.path.exists(output_dir):
+            return jsonify({'error': 'Invalid output directory'}), 400
+        
+        # Create a temporary ZIP file
+        import tempfile
+        import zipfile
+        from flask import send_file
+        
+        temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
+        temp_zip.close()
+        
+        try:
+            with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                # Add all PNG files from the output directory
+                for root, dirs, files in os.walk(output_dir):
+                    for file in files:
+                        if file.endswith('.png') or file.endswith('.csv'):
+                            file_path = os.path.join(root, file)
+                            # Add to zip with relative path
+                            arcname = os.path.relpath(file_path, output_dir)
+                            zipf.write(file_path, arcname)
+            
+            # Send the ZIP file
+            return send_file(
+                temp_zip.name,
+                as_attachment=True,
+                download_name=f'w3a_plots_{datetime.now().strftime("%Y%m%d_%H%M%S")}.zip',
+                mimetype='application/zip'
+            )
+            
+        except Exception as e:
+            # Clean up temp file on error
+            if os.path.exists(temp_zip.name):
+                os.unlink(temp_zip.name)
+            raise e
+            
+    except Exception as e:
+        print(f"Error in plot export: {str(e)}")
+        return jsonify({'error': str(e)}), 400

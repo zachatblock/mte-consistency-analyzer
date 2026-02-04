@@ -730,16 +730,40 @@ function generateConsistencyReport(selectedFile) {
     });
 }
 
-function generateLimitsReport(dirPath) {
-    return new Promise((resolve, reject) => {
-        // Placeholder for limits report generation
-        setTimeout(() => {
-            resolve({
-                type: 'limits',
-                message: 'Limits report functionality will be implemented next!',
-                success: true
-            });
-        }, 1000);
+function exportAllPlots(outputDir) {
+    // Create a request to download all plots as a ZIP archive
+    fetch('/export_plots', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            output_dir: outputDir
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+        return response.blob();
+    })
+    .then(blob => {
+        // Create a download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `w3a_consistency_plots_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        alert('All plots exported successfully!');
+    })
+    .catch(error => {
+        console.error('Export error:', error);
+        alert('Failed to export plots: ' + error.message);
     });
 }
 
@@ -826,24 +850,62 @@ function displayCombinedResults(results) {
 }
 
 function generateConsistencyResultsHtml(data) {
+    // Generate plots section HTML
+    let plotsHtml = '';
+    if (data.plot_results && data.plot_results.length > 0) {
+        plotsHtml = `
+            <div style="margin-top: 2rem;">
+                <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 1rem;">
+                    <h4 style="color: #2c3e50; margin: 0;">📊 Generated Plots</h4>
+                    <button type="button" class="btn btn-success btn-sm" onclick="exportAllPlots('${data.output_dir}')">
+                        📁 Export All Plots
+                    </button>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1rem;">
+                    ${data.plot_results.map(plot => `
+                        <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #dee2e6;">
+                            <h5 style="color: #2c3e50; margin-bottom: 0.5rem; font-size: 1rem;">${plot.test_id}</h5>
+                            <div style="text-align: center; margin-bottom: 0.5rem;">
+                                <img src="data:image/png;base64,${plot.plot_base64}" 
+                                     alt="${plot.test_id} Consistency Plot" 
+                                     style="max-width: 100%; height: auto; border-radius: 4px;">
+                            </div>
+                            <div style="font-size: 0.8rem; color: #666; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                                <div><strong>Samples:</strong> ${plot.n_samples}</div>
+                                <div><strong>Mean:</strong> ${plot.mean.toFixed(3)}</div>
+                                <div><strong>Std:</strong> ${plot.std.toFixed(3)}</div>
+                                <div><strong>Out of Control:</strong> ${plot.out_of_control_total}</div>
+                                ${plot.has_limits ? `
+                                    <div><strong>USL Violations:</strong> ${plot.usl_violations}</div>
+                                    <div><strong>LSL Violations:</strong> ${plot.lsl_violations}</div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
     return `
         <div style="margin-bottom: 2rem; padding: 1.5rem; background: #e7f3ff; border-radius: 8px; border-left: 4px solid #007bff;">
             <h3 style="color: #007bff; margin-bottom: 1rem;">📊 Consistency Plots Generated</h3>
             
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
                 <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
-                    <div style="font-size: 2rem; font-weight: bold; color: #007bff;">${data.total_tests}</div>
+                    <div style="font-size: 2rem; font-weight: bold; color: #007bff;">${data.total_tests || 0}</div>
                     <div style="color: #666;">Unique Tests</div>
                 </div>
                 <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
-                    <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${data.plots_generated}</div>
+                    <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${data.plots_generated || 0}</div>
                     <div style="color: #666;">Plots Generated</div>
                 </div>
                 <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
-                    <div style="font-size: 2rem; font-weight: bold; color: #6f42c1;">${data.csv_files_processed}</div>
+                    <div style="font-size: 2rem; font-weight: bold; color: #6f42c1;">${data.csv_files_processed || 0}</div>
                     <div style="color: #666;">CSV Files Processed</div>
                 </div>
-                ${data.test_limits_loaded > 0 ? `
+                ${(data.test_limits_loaded || 0) > 0 ? `
                 <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
                     <div style="font-size: 2rem; font-weight: bold; color: #fd7e14;">${data.test_limits_loaded}</div>
                     <div style="color: #666;">USL/LSL Limits Applied</div>
@@ -858,7 +920,7 @@ function generateConsistencyResultsHtml(data) {
                     <li style="margin: 0.25rem 0;">✅ Serial number color coding (549 = Red, 602 = Blue)</li>
                     <li style="margin: 0.25rem 0;">✅ Pass/Fail status indicators</li>
                     <li style="margin: 0.25rem 0;">✅ Out-of-control point detection</li>
-                    ${data.test_limits_loaded > 0 ? 
+                    ${(data.test_limits_loaded || 0) > 0 ? 
                         '<li style="margin: 0.25rem 0;">✅ USL/LSL specification limits from config files</li>' : 
                         '<li style="margin: 0.25rem 0; color: #666;">⚪ USL/LSL limits (config files not provided)</li>'
                     }
@@ -866,15 +928,7 @@ function generateConsistencyResultsHtml(data) {
                 </ul>
             </div>
             
-            <div style="margin-top: 1.5rem; padding: 1rem; background: #d1ecf1; border-radius: 6px;">
-                <h4 style="color: #0c5460; margin-bottom: 0.5rem;">📂 Output Location:</h4>
-                <p style="margin: 0; color: #666;">
-                    <strong>Plots saved to:</strong> <code>${data.output_dir}</code><br>
-                    ${data.summary_path ? `<strong>Summary report:</strong> <code>${data.summary_path}</code><br>` : ''}
-                    <strong>Plot files:</strong> Individual PNG files for each test parameter<br>
-                    <strong>Naming:</strong> [TEST_ID]_consistency.png
-                </p>
-            </div>
+            ${plotsHtml}
         </div>
     `;
 }
