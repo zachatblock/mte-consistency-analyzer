@@ -942,3 +942,253 @@ def analyze_failures():
                 
     except Exception as e:
         return jsonify({'error': f'Analysis error: {str(e)}'}), 500
+
+@consistency_bp.route('/generate_consistency_plots', methods=['POST'])
+def generate_consistency_plots():
+    """Generate consistency plots from uploaded log files."""
+    try:
+        data = request.get_json()
+        log_path = data.get('log_path', '').strip()
+        test_plan_path = data.get('test_plan_path', '').strip()
+        step_config_path = data.get('step_config_path', '').strip()
+        
+        print(f"DEBUG: Consistency plots - log_path: '{log_path}'")
+        print(f"DEBUG: Consistency plots - test_plan_path: '{test_plan_path}'")
+        print(f"DEBUG: Consistency plots - step_config_path: '{step_config_path}'")
+        
+        if not log_path or not os.path.exists(log_path):
+            return jsonify({'error': 'No log directory or file path provided'}), 400
+        
+        # Create output directory
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_dir = os.path.join(tempfile.gettempdir(), f'w3a_consistency_{timestamp}')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Handle ZIP files - extract if needed
+        processing_dir = log_path
+        temp_extract_dir = None
+        
+        if os.path.isfile(log_path) and log_path.endswith('.zip'):
+            print("DEBUG: Extracting ZIP file for consistency plot processing...")
+            temp_extract_dir = os.path.join(tempfile.gettempdir(), f'w3a_consistency_extract_{timestamp}')
+            os.makedirs(temp_extract_dir, exist_ok=True)
+            
+            try:
+                with zipfile.ZipFile(log_path, 'r') as zip_ref:
+                    zip_ref.extractall(temp_extract_dir)
+                processing_dir = temp_extract_dir
+                print(f"DEBUG: Extracted ZIP to: {processing_dir}")
+            except Exception as e:
+                if temp_extract_dir and os.path.exists(temp_extract_dir):
+                    shutil.rmtree(temp_extract_dir)
+                return jsonify({'error': f'Error extracting ZIP file: {str(e)}'}), 400
+        
+        try:
+            # Get test limits from config files if provided
+            test_limits = {}
+            if test_plan_path and step_config_path and os.path.exists(test_plan_path) and os.path.exists(step_config_path):
+                test_limits = get_test_limits_from_configs(test_plan_path, step_config_path)
+                print(f"DEBUG: Loaded {len(test_limits)} test limits from config files")
+            
+            # Collect all test data
+            print("DEBUG: Collecting test data from all CSV files...")
+            all_tests, csv_count = collect_all_test_data(processing_dir)
+            
+            if not all_tests:
+                return jsonify({'error': 'No parametric test data found'}), 400
+            
+            print(f"DEBUG: Found {len(all_tests)} unique tests from {csv_count} CSV files")
+            
+            # Generate consistency plots for each test
+            stats_list = []
+            plot_files = []
+            
+            for test_id, test_data in all_tests.items():
+                print(f"DEBUG: Generating plot for test: {test_id} ({len(test_data)} samples)")
+                
+                # Add USL/LSL limits if available from config
+                if test_id in test_limits:
+                    limits = test_limits[test_id]
+                    # Add limit information to test data for plotting
+                    for data_point in test_data:
+                        data_point['usl'] = limits['high']
+                        data_point['lsl'] = limits['low']
+                        data_point['limit_unit'] = limits['unit']
+                
+                stats = create_consistency_plot_with_limits(test_id, test_data, output_dir, test_limits.get(test_id))
+                if stats:
+                    stats_list.append(stats)
+                    plot_files.append(stats['plot_path'])
+            
+            # Generate summary report
+            summary_path = None
+            if stats_list:
+                df = pd.DataFrame(stats_list)
+                df = df.sort_values('n_samples', ascending=False)
+                summary_path = os.path.join(output_dir, 'consistency_summary.csv')
+                df.to_csv(summary_path, index=False)
+                print(f"DEBUG: Summary report saved to: {summary_path}")
+            
+            return jsonify({
+                'success': True,
+                'total_tests': len(all_tests),
+                'plots_generated': len(plot_files),
+                'csv_files_processed': csv_count,
+                'output_dir': output_dir,
+                'summary_path': summary_path,
+                'test_limits_loaded': len(test_limits),
+                'plot_files': plot_files[:10]  # Return first 10 plot paths
+            })
+            
+        finally:
+            # Cleanup temp extraction directory
+            if temp_extract_dir and os.path.exists(temp_extract_dir):
+                shutil.rmtree(temp_extract_dir)
+                
+    except Exception as e:
+        print(f"DEBUG: Consistency plot error: {str(e)}")
+        return jsonify({'error': f'Consistency plot generation error: {str(e)}'}), 500
+
+def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_info=None):
+    """Create a consistency plot with USL/LSL limits if available."""
+    df = pd.DataFrame(test_data)
+    df = df.sort_values('timestamp')
+    
+    values = df['value'].values
+    test_results = df['test_result'].values
+    serial_numbers = df['serial_number'].values
+    
+    n = len(values)
+    if n < 3:
+        return None
+    
+    # Calculate statistics
+    mean = np.mean(values)
+    std = np.std(values, ddof=1)
+    ucl = mean + 3 * std
+    lcl = mean - 3 * std
+    
+    # Identify out-of-control points
+    out_of_control = (values > ucl) | (values < lcl)
+    
+    # Separate by SN prefix (549 or 602)
+    sn_starts_549 = np.array([str(sn).startswith('549') if sn else False for sn in serial_numbers])
+    sn_starts_602 = np.array([str(sn).startswith('602') if sn else False for sn in serial_numbers])
+    
+    # Combine SN and pass/fail and OOC
+    sn549_pass_ic = sn_starts_549 & (test_results == 'PASS') & ~out_of_control
+    sn549_fail_ic = sn_starts_549 & (test_results == 'FAIL') & ~out_of_control
+    sn549_pass_ooc = sn_starts_549 & (test_results == 'PASS') & out_of_control
+    sn549_fail_ooc = sn_starts_549 & (test_results == 'FAIL') & out_of_control
+    
+    sn602_pass_ic = sn_starts_602 & (test_results == 'PASS') & ~out_of_control
+    sn602_fail_ic = sn_starts_602 & (test_results == 'FAIL') & ~out_of_control
+    sn602_pass_ooc = sn_starts_602 & (test_results == 'PASS') & out_of_control
+    sn602_fail_ooc = sn_starts_602 & (test_results == 'FAIL') & out_of_control
+    
+    # Create plot
+    plt.style.use('default')
+    fig, ax = plt.subplots(figsize=(14, 6))
+    x = range(len(values))
+    
+    # Plot SN starting with 549 (RED)
+    if np.any(sn549_pass_ic):
+        ax.plot(np.where(sn549_pass_ic)[0], values[sn549_pass_ic], 'ro', markersize=4, alpha=0.6, label='SN 549 PASS')
+    if np.any(sn549_fail_ic):
+        ax.plot(np.where(sn549_fail_ic)[0], values[sn549_fail_ic], 'r^', markersize=6, alpha=0.6, label='SN 549 FAIL')
+    if np.any(sn549_pass_ooc):
+        ax.plot(np.where(sn549_pass_ooc)[0], values[sn549_pass_ooc], 'r^', markersize=10, markeredgewidth=2, markerfacecolor='none', label='SN 549 OOC PASS', zorder=5)
+    if np.any(sn549_fail_ooc):
+        ax.plot(np.where(sn549_fail_ooc)[0], values[sn549_fail_ooc], 'rx', markersize=10, markeredgewidth=2, label='SN 549 OOC FAIL', zorder=5)
+    
+    # Plot SN starting with 602 (BLUE)
+    if np.any(sn602_pass_ic):
+        ax.plot(np.where(sn602_pass_ic)[0], values[sn602_pass_ic], 'bo', markersize=4, alpha=0.6, label='SN 602 PASS')
+    if np.any(sn602_fail_ic):
+        ax.plot(np.where(sn602_fail_ic)[0], values[sn602_fail_ic], 'b^', markersize=6, alpha=0.6, label='SN 602 FAIL')
+    if np.any(sn602_pass_ooc):
+        ax.plot(np.where(sn602_pass_ooc)[0], values[sn602_pass_ooc], 'b^', markersize=10, markeredgewidth=2, markerfacecolor='none', label='SN 602 OOC PASS', zorder=5)
+    if np.any(sn602_fail_ooc):
+        ax.plot(np.where(sn602_fail_ooc)[0], values[sn602_fail_ooc], 'bx', markersize=10, markeredgewidth=2, label='SN 602 OOC FAIL', zorder=5)
+    
+    # Connect all points with a line
+    ax.plot(x, values, 'gray', linewidth=0.5, alpha=0.3, zorder=1)
+    
+    # Plot control limits (±3σ)
+    ax.axhline(y=mean, color='g', linestyle='-', linewidth=2, label=f'Mean = {mean:.2f}')
+    ax.axhline(y=ucl, color='orange', linestyle='--', linewidth=2, label=f'UCL (+3σ) = {ucl:.2f}')
+    ax.axhline(y=lcl, color='orange', linestyle='--', linewidth=2, label=f'LCL (-3σ) = {lcl:.2f}')
+    
+    # Plot USL/LSL limits if available
+    usl_violations = 0
+    lsl_violations = 0
+    if limit_info:
+        usl = limit_info['high']
+        lsl = limit_info['low']
+        ax.axhline(y=usl, color='red', linestyle='-', linewidth=2, alpha=0.8, label=f'USL = {usl:.2f}')
+        ax.axhline(y=lsl, color='red', linestyle='-', linewidth=2, alpha=0.8, label=f'LSL = {lsl:.2f}')
+        
+        # Count limit violations
+        usl_violations = np.sum(values > usl)
+        lsl_violations = np.sum(values < lsl)
+    
+    unit = df['unit'].iloc[0] if 'unit' in df.columns and df['unit'].iloc[0] else ''
+    unit_str = f" ({unit})" if unit else ""
+    
+    ax.set_xlabel('Sample Number', fontsize=12)
+    ax.set_ylabel(f'Measured Value{unit_str}', fontsize=12)
+    ax.set_title(f'Consistency Plot: {test_id}\nn={n}, μ={mean:.2f}, σ={std:.2f}', fontsize=14, fontweight='bold')
+    ax.legend(loc='best', fontsize=8, ncol=2)
+    ax.grid(True, alpha=0.3)
+    
+    n_pass = np.sum(test_results == 'PASS')
+    n_fail = np.sum(test_results == 'FAIL')
+    n_sn549 = np.sum(sn_starts_549)
+    n_sn602 = np.sum(sn_starts_602)
+    
+    stats_text = f'Statistics:\n'
+    stats_text += f' Total Samples: {n}\n'
+    stats_text += f' SN 549: {n_sn549}\n'
+    stats_text += f' SN 602: {n_sn602}\n'
+    stats_text += f' PASS: {n_pass} ({100*n_pass/n:.1f}%)\n'
+    stats_text += f' FAIL: {n_fail} ({100*n_fail/n:.1f}%)\n'
+    stats_text += f' Mean: {mean:.2f}\n'
+    stats_text += f' Std Dev: {std:.2f}\n'
+    stats_text += f' Min: {np.min(values):.2f}\n'
+    stats_text += f' Max: {np.max(values):.2f}\n'
+    stats_text += f' OOC Total: {np.sum(out_of_control)}'
+    
+    if limit_info:
+        stats_text += f'\n USL Violations: {usl_violations}'
+        stats_text += f'\n LSL Violations: {lsl_violations}'
+    
+    ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+            fontsize=9, family='monospace')
+    
+    plt.tight_layout()
+    
+    safe_filename = test_id.replace('/', '_').replace('\\', '_')
+    output_path = os.path.join(output_dir, f'{safe_filename}_consistency.png')
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    return {
+        'test_id': test_id,
+        'n_samples': n,
+        'n_sn549': int(n_sn549),
+        'n_sn602': int(n_sn602),
+        'n_pass': int(n_pass),
+        'n_fail': int(n_fail),
+        'mean': mean,
+        'std': std,
+        'ucl': ucl,
+        'lcl': lcl,
+        'min': np.min(values),
+        'max': np.max(values),
+        'out_of_control_total': int(np.sum(out_of_control)),
+        'usl_violations': usl_violations,
+        'lsl_violations': lsl_violations,
+        'has_limits': limit_info is not None,
+        'plot_path': output_path
+    }

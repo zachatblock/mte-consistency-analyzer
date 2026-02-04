@@ -678,16 +678,55 @@ function generatePlots() {
 }
 
 // Individual report generation functions
-function generateConsistencyReport(dirPath) {
-    return new Promise((resolve, reject) => {
-        // Placeholder for consistency report generation
-        setTimeout(() => {
-            resolve({
+function generateConsistencyReport(selectedFile) {
+    console.log('DEBUG JS: generateConsistencyReport called with selectedFile:', selectedFile);
+    
+    // Upload the file first, then process it
+    const formData = new FormData();
+    formData.append('log_file', selectedFile);
+    
+    console.log('DEBUG JS: Uploading file for consistency plots...');
+    
+    return fetch('/upload_log_file', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(uploadData => {
+        if (!uploadData.success) {
+            throw new Error('File upload failed: ' + uploadData.error);
+        }
+        
+        console.log('DEBUG JS: File uploaded successfully, generating consistency plots...');
+        
+        // Get config file paths from the UI inputs (if any)
+        const testPlanPath = document.getElementById('yaml_file_path').value.trim();
+        const stepConfigPath = document.getElementById('step_file_path').value.trim();
+        
+        // Now generate consistency plots
+        return fetch('/generate_consistency_plots', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                log_path: uploadData.file_path,
+                test_plan_path: testPlanPath,
+                step_config_path: stepConfigPath
+            })
+        });
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            return {
                 type: 'consistency',
-                message: 'Consistency report functionality will be implemented next!',
+                data: data,
                 success: true
-            });
-        }, 1000);
+            };
+        } else {
+            throw new Error('Consistency plot generation error: ' + data.error);
+        }
     });
 }
 
@@ -765,12 +804,7 @@ function displayCombinedResults(results) {
     
     results.forEach(result => {
         if (result.type === 'consistency') {
-            combinedHtml += `
-                <div style="margin-bottom: 2rem; padding: 1.5rem; background: #e7f3ff; border-radius: 8px; border-left: 4px solid #007bff;">
-                    <h3 style="color: #007bff; margin-bottom: 1rem;">📊 Consistency Report</h3>
-                    <p>${result.message}</p>
-                </div>
-            `;
+            combinedHtml += generateConsistencyResultsHtml(result.data);
         } else if (result.type === 'limits') {
             combinedHtml += `
                 <div style="margin-bottom: 2rem; padding: 1.5rem; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
@@ -789,6 +823,60 @@ function displayCombinedResults(results) {
     const resultsDiv = document.createElement('div');
     resultsDiv.innerHTML = combinedHtml;
     rightPanel.appendChild(resultsDiv);
+}
+
+function generateConsistencyResultsHtml(data) {
+    return `
+        <div style="margin-bottom: 2rem; padding: 1.5rem; background: #e7f3ff; border-radius: 8px; border-left: 4px solid #007bff;">
+            <h3 style="color: #007bff; margin-bottom: 1rem;">📊 Consistency Plots Generated</h3>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #007bff;">${data.total_tests}</div>
+                    <div style="color: #666;">Unique Tests</div>
+                </div>
+                <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${data.plots_generated}</div>
+                    <div style="color: #666;">Plots Generated</div>
+                </div>
+                <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #6f42c1;">${data.csv_files_processed}</div>
+                    <div style="color: #666;">CSV Files Processed</div>
+                </div>
+                ${data.test_limits_loaded > 0 ? `
+                <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #fd7e14;">${data.test_limits_loaded}</div>
+                    <div style="color: #666;">USL/LSL Limits Applied</div>
+                </div>
+                ` : ''}
+            </div>
+            
+            <div style="margin-bottom: 1.5rem;">
+                <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">📈 Features Generated:</h4>
+                <ul style="margin: 0; padding-left: 1.5rem; background: white; padding: 1rem; border-radius: 6px;">
+                    <li style="margin: 0.25rem 0;">✅ Statistical Process Control (SPC) charts with ±3σ limits</li>
+                    <li style="margin: 0.25rem 0;">✅ Serial number color coding (549 = Red, 602 = Blue)</li>
+                    <li style="margin: 0.25rem 0;">✅ Pass/Fail status indicators</li>
+                    <li style="margin: 0.25rem 0;">✅ Out-of-control point detection</li>
+                    ${data.test_limits_loaded > 0 ? 
+                        '<li style="margin: 0.25rem 0;">✅ USL/LSL specification limits from config files</li>' : 
+                        '<li style="margin: 0.25rem 0; color: #666;">⚪ USL/LSL limits (config files not provided)</li>'
+                    }
+                    <li style="margin: 0.25rem 0;">✅ Comprehensive statistics box with sample counts</li>
+                </ul>
+            </div>
+            
+            <div style="margin-top: 1.5rem; padding: 1rem; background: #d1ecf1; border-radius: 6px;">
+                <h4 style="color: #0c5460; margin-bottom: 0.5rem;">📂 Output Location:</h4>
+                <p style="margin: 0; color: #666;">
+                    <strong>Plots saved to:</strong> <code>${data.output_dir}</code><br>
+                    ${data.summary_path ? `<strong>Summary report:</strong> <code>${data.summary_path}</code><br>` : ''}
+                    <strong>Plot files:</strong> Individual PNG files for each test parameter<br>
+                    <strong>Naming:</strong> [TEST_ID]_consistency.png
+                </p>
+            </div>
+        </div>
+    `;
 }
 
 function generateParetoResultsHtml(data) {
