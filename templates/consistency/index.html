@@ -719,23 +719,37 @@ function generateLimitsReport(dirPath) {
 
 function generateParetoReport(selectedFile) {
     console.log('DEBUG JS: generateParetoReport called with selectedFile:', selectedFile);
+    console.log('DEBUG JS: selectedFile.name:', selectedFile.name);
+    console.log('DEBUG JS: selectedFile.size:', selectedFile.size);
     
-    // For now, we'll assume the user has the file at a known path
-    // In a real implementation, we'd upload the file first
-    // But since the user mentioned a specific path, let's use that
-    const logPath = '/Users/zachstanziano/Downloads/aws-logs-w3a-w3a_mlb_test-2026-01-12T03-54-06.zip';
+    // Upload the file first, then process it
+    const formData = new FormData();
+    formData.append('log_file', selectedFile);
     
-    console.log('DEBUG JS: Using hardcoded path for now:', logPath);
-    console.log('DEBUG JS: Sending request body:', JSON.stringify({log_path: logPath}));
+    console.log('DEBUG JS: Uploading file to server...');
     
-    return fetch('/analyze_failures', {
+    return fetch('/upload_log_file', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            log_path: logPath
-        })
+        body: formData
+    })
+    .then(response => response.json())
+    .then(uploadData => {
+        if (!uploadData.success) {
+            throw new Error('File upload failed: ' + uploadData.error);
+        }
+        
+        console.log('DEBUG JS: File uploaded successfully, server path:', uploadData.file_path);
+        
+        // Now analyze the uploaded file
+        return fetch('/analyze_failures', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                log_path: uploadData.file_path
+            })
+        });
     })
     .then(response => response.json())
     .then(data => {

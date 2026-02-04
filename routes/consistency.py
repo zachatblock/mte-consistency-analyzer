@@ -539,6 +539,45 @@ def read_file_path():
     except Exception as e:
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
+@consistency_bp.route('/upload_log_file', methods=['POST'])
+def upload_log_file():
+    """Handle log file uploads for analysis."""
+    try:
+        if 'log_file' not in request.files:
+            return jsonify({'error': 'No log file provided'}), 400
+        
+        file = request.files['log_file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Validate file type
+        filename = secure_filename(file.filename)
+        if not (filename.lower().endswith('.zip') or filename.lower().endswith('.csv')):
+            return jsonify({'error': 'Invalid file type. Expected .zip or .csv'}), 400
+        
+        # Create uploads directory
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        upload_dir = os.path.join(tempfile.gettempdir(), f'w3a_uploads_{timestamp}')
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Save the uploaded file
+        file_path = os.path.join(upload_dir, filename)
+        file.save(file_path)
+        
+        print(f"DEBUG: File uploaded successfully to: {file_path}")
+        print(f"DEBUG: File size: {os.path.getsize(file_path)} bytes")
+        
+        return jsonify({
+            'success': True,
+            'file_path': file_path,
+            'filename': filename,
+            'size': os.path.getsize(file_path)
+        })
+        
+    except Exception as e:
+        print(f"DEBUG: Upload error: {str(e)}")
+        return jsonify({'error': f'Upload error: {str(e)}'}), 500
+
 # Failure Analysis Functions
 def find_failed_logs(log_dir):
     """Find all failed log files (ending with _F.zip)."""
