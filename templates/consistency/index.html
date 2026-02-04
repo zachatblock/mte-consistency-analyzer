@@ -846,36 +846,73 @@ function generateConsistencyResultsHtml(data) {
     // Generate plots section HTML
     let plotsHtml = '';
     if (data.plot_results && data.plot_results.length > 0) {
+        // Sort plots: Out-of-control-but-passed tests first (with pink border), then others
+        const sortedPlots = [...data.plot_results].sort((a, b) => {
+            // Calculate out-of-control-but-passed for each plot
+            const aOocPassed = (a.out_of_control_total || 0) - (a.usl_violations || 0) - (a.lsl_violations || 0);
+            const bOocPassed = (b.out_of_control_total || 0) - (b.usl_violations || 0) - (b.lsl_violations || 0);
+            
+            // Sort by OOC-but-passed (descending), then by test_id
+            if (aOocPassed !== bOocPassed) {
+                return bOocPassed - aOocPassed;
+            }
+            return a.test_id.localeCompare(b.test_id);
+        });
+        
         plotsHtml = `
             <div style="margin-top: 2rem;">
-                <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                     <h4 style="color: #2c3e50; margin: 0;">📊 Generated Plots</h4>
                     <button type="button" class="btn btn-success btn-sm" onclick="exportAllPlots('${data.output_dir}')">
                         📁 Export All Plots
                     </button>
                 </div>
                 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1rem;">
-                    ${data.plot_results.map(plot => `
-                        <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #dee2e6;">
-                            <h5 style="color: #2c3e50; margin-bottom: 0.5rem; font-size: 1rem;">${plot.test_id}</h5>
-                            <div style="text-align: center; margin-bottom: 0.5rem;">
+                <!-- Single column layout for better visibility -->
+                <div style="display: flex; flex-direction: column; gap: 2rem;">
+                    ${sortedPlots.map(plot => {
+                        // Calculate out-of-control-but-passed count
+                        const oocPassed = (plot.out_of_control_total || 0) - (plot.usl_violations || 0) - (plot.lsl_violations || 0);
+                        const hasPinkBorder = oocPassed > 0;
+                        
+                        return `
+                        <div style="background: white; padding: 1.5rem; border-radius: 8px; border: 3px solid ${hasPinkBorder ? '#ff69b4' : '#dee2e6'}; ${hasPinkBorder ? 'box-shadow: 0 4px 8px rgba(255, 105, 180, 0.2);' : ''}">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <h5 style="color: #2c3e50; margin: 0; font-size: 1.2rem; font-weight: bold;">${plot.test_id}</h5>
+                                ${hasPinkBorder ? '<div style="background: #ff69b4; color: white; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem; font-weight: bold;">⚠️ OOC BUT PASSED</div>' : ''}
+                            </div>
+                            
+                            <div style="text-align: center; margin-bottom: 1rem;">
                                 <img src="data:image/png;base64,${plot.plot_base64}" 
                                      alt="${plot.test_id} Consistency Plot" 
-                                     style="max-width: 100%; height: auto; border-radius: 4px;">
+                                     style="width: 100%; height: auto; border-radius: 4px; max-height: 500px; object-fit: contain;">
                             </div>
-                            <div style="font-size: 0.8rem; color: #666; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
-                                <div><strong>Samples:</strong> ${plot.n_samples}</div>
+                            
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; font-size: 0.9rem; color: #666;">
+                                <div><strong>Total Samples:</strong> ${plot.n_samples}</div>
+                                <div><strong>SN 549:</strong> ${plot.n_sn549}</div>
+                                <div><strong>SN 602:</strong> ${plot.n_sn602}</div>
                                 <div><strong>Mean:</strong> ${plot.mean.toFixed(3)}</div>
-                                <div><strong>Std:</strong> ${plot.std.toFixed(3)}</div>
+                                <div><strong>Std Dev:</strong> ${plot.std.toFixed(3)}</div>
                                 <div><strong>Out of Control:</strong> ${plot.out_of_control_total}</div>
+                                ${hasPinkBorder ? `<div style="color: #ff69b4; font-weight: bold;"><strong>OOC but Passed:</strong> ${oocPassed}</div>` : ''}
                                 ${plot.has_limits ? `
                                     <div><strong>USL Violations:</strong> ${plot.usl_violations}</div>
                                     <div><strong>LSL Violations:</strong> ${plot.lsl_violations}</div>
                                 ` : ''}
                             </div>
+                            
+                            ${hasPinkBorder ? `
+                                <div style="margin-top: 1rem; padding: 0.75rem; background: #fff0f8; border: 1px solid #ff69b4; border-radius: 6px;">
+                                    <div style="color: #d63384; font-weight: bold; font-size: 0.9rem;">
+                                        ⚠️ ATTENTION: This test has ${oocPassed} data points that are statistically out-of-control (beyond ±3σ) but still passed the test limits.
+                                        This may indicate process variation that needs investigation.
+                                    </div>
+                                </div>
+                            ` : ''}
                         </div>
-                    `).join('')}
+                        `;
+                    }).join('')}
                 </div>
             </div>
         `;
