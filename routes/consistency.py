@@ -180,7 +180,7 @@ def extract_zip_files(zip_dir, temp_dir):
     return extracted_count
 
 def parse_csv_file(csv_path):
-    """Parse CSV file and extract test data."""
+    """Parse CSV file and extract test data with limits."""
     test_data = []
     filename = os.path.basename(csv_path)
     serial_number = extract_sn_from_filename(filename)
@@ -196,14 +196,31 @@ def parse_csv_file(csv_path):
                     unit = row.get('unit', '')
                     execution_time = row.get('execution_time', '')
                     test_result = row.get('test_result', '')
+                    lo_limit = row.get('lo_limit', '')
+                    hi_limit = row.get('hi_limit', '')
                     
-                    if test_type != 'float':
+                    if test_type != 'FLOAT':
                         continue
                     
                     try:
                         value = float(ret_value)
                         if abs(value) > 1e30:
                             continue
+                        
+                        # Parse limits if they exist
+                        low_limit = None
+                        high_limit = None
+                        try:
+                            if lo_limit and lo_limit.strip():
+                                low_limit = float(lo_limit)
+                        except (ValueError, TypeError):
+                            pass
+                        
+                        try:
+                            if hi_limit and hi_limit.strip():
+                                high_limit = float(hi_limit)
+                        except (ValueError, TypeError):
+                            pass
                         
                         test_data.append({
                             'test_id': test_id,
@@ -212,7 +229,9 @@ def parse_csv_file(csv_path):
                             'timestamp': execution_time,
                             'test_result': test_result,
                             'serial_number': serial_number,
-                            'source_file': filename
+                            'source_file': filename,
+                            'low_limit': low_limit,
+                            'high_limit': high_limit
                         })
                     except (ValueError, TypeError):
                         continue
@@ -1084,7 +1103,7 @@ def generate_consistency_plots():
         return jsonify({'error': f'Consistency plot generation error: {str(e)}'}), 500
 
 def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_info=None):
-    """Create a consistency plot with USL/LSL limits if available."""
+    """Create a consistency plot with USL/LSL limits extracted from the CSV data."""
     df = pd.DataFrame(test_data)
     df = df.sort_values('timestamp')
     
@@ -1104,6 +1123,26 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
     
     # Identify out-of-control points
     out_of_control = (values > ucl) | (values < lcl)
+    
+    # Extract limits from the data itself (they're in the CSV files!)
+    usl = None
+    lsl = None
+    has_limits = False
+    
+    # Check if any data points have limit information
+    for data_point in test_data:
+        if data_point.get('high_limit') is not None:
+            usl = data_point['high_limit']
+            has_limits = True
+            break
+    
+    for data_point in test_data:
+        if data_point.get('low_limit') is not None:
+            lsl = data_point['low_limit']
+            has_limits = True
+            break
+    
+    print(f"DEBUG: Test {test_id} - Found limits in data: USL={usl}, LSL={lsl}")
     
     # Separate by SN prefix (549 or 602)
     sn_starts_549 = np.array([str(sn).startswith('549') if sn else False for sn in serial_numbers])
@@ -1153,18 +1192,16 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
     ax.axhline(y=ucl, color='orange', linestyle='--', linewidth=2, label=f'UCL (+3σ) = {ucl:.2f}')
     ax.axhline(y=lcl, color='orange', linestyle='--', linewidth=2, label=f'LCL (-3σ) = {lcl:.2f}')
     
-    # Plot USL/LSL limits if available
+    # Plot USL/LSL limits if available from the CSV data
     usl_violations = 0
     lsl_violations = 0
-    if limit_info:
-        usl = limit_info['high']
-        lsl = limit_info['low']
-        ax.axhline(y=usl, color='red', linestyle='-', linewidth=2, alpha=0.8, label=f'USL = {usl:.2f}')
-        ax.axhline(y=lsl, color='red', linestyle='-', linewidth=2, alpha=0.8, label=f'LSL = {lsl:.2f}')
-        
-        # Count limit violations
-        usl_violations = np.sum(values > usl)
-        lsl_violations = np.sum(values < lsl)
+    if has_limits:
+        if usl is not None:
+            ax.axhline(y=usl, color='red', linestyle='-', linewidth=2, alpha=0.8, label=f'USL = {usl:.2f}')
+            usl_violations = np.sum(values > usl)
+        if lsl is not None:
+            ax.axhline(y=lsl, color='red', linestyle='-', linewidth=2, alpha=0.8, label=f'LSL = {lsl:.2f}')
+            lsl_violations = np.sum(values < lsl)
     
     unit = df['unit'].iloc[0] if 'unit' in df.columns and df['unit'].iloc[0] else ''
     unit_str = f" ({unit})" if unit else ""
@@ -1192,9 +1229,11 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
     stats_text += f' Max: {np.max(values):.2f}\n'
     stats_text += f' OOC Total: {np.sum(out_of_control)}'
     
-    if limit_info:
-        stats_text += f'\n USL Violations: {usl_violations}'
-        stats_text += f'\n LSL Violations: {lsl_violations}'
+    if has_limits:
+        if usl is not None:
+            stats_text += f'\n USL Violations: {usl_violations}'
+        if lsl is not None:
+            stats_text += f'\n LSL Violations: {lsl_violations}'
     
     ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, verticalalignment='top',
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
@@ -1237,7 +1276,9 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
         'out_of_control_total': int(np.sum(out_of_control)),
         'usl_violations': usl_violations,
         'lsl_violations': lsl_violations,
-        'has_limits': limit_info is not None,
+        'has_limits': has_limits,
+        'usl': usl,
+        'lsl': lsl,
         'plot_path': output_path,
         'plot_base64': plot_base64
     }

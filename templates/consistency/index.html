@@ -829,13 +829,6 @@ function displayCombinedResults(results) {
     results.forEach(result => {
         if (result.type === 'consistency') {
             combinedHtml += generateConsistencyResultsHtml(result.data);
-        } else if (result.type === 'limits') {
-            combinedHtml += `
-                <div style="margin-bottom: 2rem; padding: 1.5rem; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-                    <h3 style="color: #856404; margin-bottom: 1rem;">📏 Limits Report</h3>
-                    <p>${result.message}</p>
-                </div>
-            `;
         } else if (result.type === 'pareto') {
             combinedHtml += generateParetoResultsHtml(result.data);
         }
@@ -920,10 +913,7 @@ function generateConsistencyResultsHtml(data) {
                     <li style="margin: 0.25rem 0;">✅ Serial number color coding (549 = Red, 602 = Blue)</li>
                     <li style="margin: 0.25rem 0;">✅ Pass/Fail status indicators</li>
                     <li style="margin: 0.25rem 0;">✅ Out-of-control point detection</li>
-                    ${(data.test_limits_loaded || 0) > 0 ? 
-                        '<li style="margin: 0.25rem 0;">✅ USL/LSL specification limits from config files</li>' : 
-                        '<li style="margin: 0.25rem 0; color: #666;">⚪ USL/LSL limits (config files not provided)</li>'
-                    }
+                    <li style="margin: 0.25rem 0;">✅ USL/LSL specification limits extracted from CSV files</li>
                     <li style="margin: 0.25rem 0;">✅ Comprehensive statistics box with sample counts</li>
                 </ul>
             </div>
