@@ -4,6 +4,7 @@ Handles the consistency plot generation functionality.
 """
 
 from flask import Blueprint, render_template, request, jsonify, send_file, flash, redirect, url_for
+from werkzeug.utils import secure_filename
 import os
 import csv
 import pandas as pd
@@ -12,7 +13,7 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
-from collections import defaultdict
+from collections import defaultdict, Counter
 import warnings
 import re
 import zipfile
@@ -435,3 +436,330 @@ def download_file(filename):
             return "File not found", 404
     except Exception as e:
         return f"Error downloading file: {str(e)}", 500
+
+@consistency_bp.route('/upload_file', methods=['POST'])
+def upload_file():
+    """Handle file uploads from the file input fields."""
+    try:
+        file_type = request.form.get('file_type')
+        file_path = request.form.get('file_path', '').strip()
+        
+        if not file_type or file_type not in ['csv', 'yaml', 'step']:
+            return jsonify({'error': 'Invalid file type'}), 400
+        
+        # Handle file upload vs file path
+        if 'file' in request.files and request.files['file'].filename:
+            # File upload
+            file = request.files['file']
+            filename = secure_filename(file.filename)
+            
+            # Basic file type validation
+            if file_type == 'csv' and not filename.lower().endswith('.csv'):
+                return jsonify({'error': 'Invalid file type. Expected .csv'}), 400
+            elif file_type in ['yaml', 'step'] and not (filename.lower().endswith('.yaml') or filename.lower().endswith('.yml')):
+                return jsonify({'error': 'Invalid file type. Expected .yaml or .yml'}), 400
+            
+            # Read file content
+            file_content = file.read().decode('utf-8')
+            
+            return jsonify({
+                'success': True,
+                'filename': filename,
+                'content': file_content[:2000] + ('\n\n... (content truncated)' if len(file_content) > 2000 else ''),
+                'full_length': len(file_content)
+            })
+            
+        elif file_path:
+            # File path
+            if not os.path.exists(file_path):
+                return jsonify({'error': 'File path does not exist'}), 400
+            
+            # Basic file type validation
+            path_lower = file_path.lower()
+            if file_type == 'csv' and not path_lower.endswith('.csv'):
+                return jsonify({'error': 'Invalid file type. Expected .csv'}), 400
+            elif file_type in ['yaml', 'step'] and not (path_lower.endswith('.yaml') or path_lower.endswith('.yml')):
+                return jsonify({'error': 'Invalid file type. Expected .yaml or .yml'}), 400
+            
+            # Read file content
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    file_content = f.read()
+                
+                return jsonify({
+                    'success': True,
+                    'filename': os.path.basename(file_path),
+                    'content': file_content[:2000] + ('\n\n... (content truncated)' if len(file_content) > 2000 else ''),
+                    'full_length': len(file_content)
+                })
+            except Exception as e:
+                return jsonify({'error': f'Error reading file: {str(e)}'}), 500
+        
+        else:
+            return jsonify({'error': 'No file or file path provided'}), 400
+            
+    except Exception as e:
+        return jsonify({'error': f'Upload error: {str(e)}'}), 500
+
+@consistency_bp.route('/read_file_path', methods=['POST'])
+def read_file_path():
+    """Read file content from a file path."""
+    try:
+        data = request.get_json()
+        file_path = data.get('file_path', '').strip()
+        file_type = data.get('file_type', '')
+        
+        if not file_path or not file_type:
+            return jsonify({'error': 'File path and type required'}), 400
+        
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File does not exist'}), 400
+        
+        # Basic file type validation
+        path_lower = file_path.lower()
+        if file_type == 'csv' and not path_lower.endswith('.csv'):
+            return jsonify({'error': 'Invalid file type. Expected .csv'}), 400
+        elif file_type in ['yaml', 'step'] and not (path_lower.endswith('.yaml') or path_lower.endswith('.yml')):
+            return jsonify({'error': 'Invalid file type. Expected .yaml or .yml'}), 400
+        
+        # Read and return file content
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            return jsonify({
+                'success': True,
+                'filename': os.path.basename(file_path),
+                'content': content[:2000] + ('\n\n... (content truncated)' if len(content) > 2000 else ''),
+                'full_length': len(content)
+            })
+        except Exception as e:
+            return jsonify({'error': f'Error reading file: {str(e)}'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
+
+# Failure Analysis Functions
+def find_failed_logs(log_dir):
+    """Find all failed log files (ending with _F.zip)."""
+    failed_files = []
+    for root, dirs, files in os.walk(log_dir):
+        for file in files:
+            if file.endswith('_F.zip'):
+                failed_files.append(os.path.join(root, file))
+    return failed_files
+
+def extract_and_parse_failed_log(zip_path, temp_dir):
+    """Extract a failed log zip and parse the parametric CSV."""
+    try:
+        # Create unique temp directory for this zip
+        zip_name = os.path.basename(zip_path).replace('.zip', '')
+        extract_dir = os.path.join(temp_dir, zip_name)
+        os.makedirs(extract_dir, exist_ok=True)
+        
+        # Extract zip file
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
+        
+        # Find parametric CSV file
+        parametric_file = None
+        for root, dirs, files in os.walk(extract_dir):
+            for file in files:
+                if file.endswith('_parametric.csv'):
+                    parametric_file = os.path.join(root, file)
+                    break
+            if parametric_file:
+                break
+        
+        if not parametric_file:
+            return None
+        
+        # Parse the CSV
+        failure_data = parse_parametric_csv_for_failures(parametric_file)
+        return failure_data
+        
+    except Exception as e:
+        print(f"Error processing {zip_path}: {e}")
+        return None
+
+def parse_parametric_csv_for_failures(csv_path):
+    """Parse parametric CSV and extract failure information."""
+    filename = os.path.basename(csv_path)
+    serial_number = extract_sn_from_filename(filename)
+    
+    failure_info = {
+        'serial_number': serial_number,
+        'source_file': filename,
+        'failed_tests': [],
+        'first_error_code': None,
+        'first_error_item': None,
+        'overall_result': None
+    }
+    
+    try:
+        with open(csv_path, 'r') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                test_result = row.get('test_result', '')
+                test_id = row.get('test_id', '')
+                
+                # Collect all failed tests
+                if test_result == 'FAIL':
+                    failure_info['failed_tests'].append({
+                        'test_id': test_id,
+                        'test_group': row.get('test_group', ''),
+                        'lo_limit': row.get('lo_limit', ''),
+                        'hi_limit': row.get('hi_limit', ''),
+                        'unit': row.get('unit', ''),
+                        'ret': row.get('ret', ''),
+                        'execution_time': row.get('execution_time', '')
+                    })
+                
+                # Extract summary information
+                if test_id == 'FIRST_ERROR_CODE':
+                    failure_info['first_error_code'] = row.get('ret', '')
+                elif test_id == 'FIRST_ERROR_ITEM_TYPE':
+                    failure_info['first_error_item'] = row.get('ret', '')
+                elif test_id == 'OVERALL_TEST_RESULT':
+                    failure_info['overall_result'] = row.get('ret', '')
+    
+    except Exception as e:
+        print(f"Error reading CSV {csv_path}: {e}")
+        return None
+    
+    return failure_info
+
+def create_pareto_chart(failure_counts, title, output_path):
+    """Create a Pareto chart from failure counts."""
+    if not failure_counts:
+        return
+    
+    # Sort by count (descending)
+    sorted_failures = failure_counts.most_common()
+    
+    # Prepare data
+    labels = [item[0] for item in sorted_failures]
+    counts = [item[1] for item in sorted_failures]
+    
+    # Calculate cumulative percentages
+    total = sum(counts)
+    cumulative_counts = np.cumsum(counts)
+    cumulative_percentages = (cumulative_counts / total) * 100
+    
+    # Create figure with two y-axes
+    fig, ax1 = plt.subplots(figsize=(14, 8))
+    
+    # Bar chart for counts
+    bars = ax1.bar(range(len(labels)), counts, color='steelblue', alpha=0.7)
+    ax1.set_xlabel('Failure Type', fontsize=12)
+    ax1.set_ylabel('Failure Count', fontsize=12, color='steelblue')
+    ax1.tick_params(axis='y', labelcolor='steelblue')
+    
+    # Rotate x-axis labels for better readability
+    ax1.set_xticks(range(len(labels)))
+    ax1.set_xticklabels(labels, rotation=45, ha='right', fontsize=10)
+    
+    # Add count labels on bars
+    for i, (bar, count) in enumerate(zip(bars, counts)):
+        ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(counts)*0.01,
+                str(count), ha='center', va='bottom', fontsize=9)
+    
+    # Line chart for cumulative percentage
+    ax2 = ax1.twinx()
+    ax2.plot(range(len(labels)), cumulative_percentages, color='red', marker='o', linewidth=2)
+    ax2.set_ylabel('Cumulative Percentage (%)', fontsize=12, color='red')
+    ax2.tick_params(axis='y', labelcolor='red')
+    ax2.set_ylim(0, 105)
+    
+    # Add 80% line
+    ax2.axhline(y=80, color='orange', linestyle='--', linewidth=1, alpha=0.7)
+    ax2.text(len(labels)*0.7, 82, '80% Line', color='orange', fontsize=10)
+    
+    # Title and grid
+    plt.title(f'Pareto Chart: {title}\\nTotal Failures: {total}', fontsize=14, fontweight='bold', pad=20)
+    ax1.grid(True, alpha=0.3)
+    
+    # Tight layout and save
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+@consistency_bp.route('/analyze_failures', methods=['POST'])
+def analyze_failures():
+    """Analyze failed logs and generate Pareto charts."""
+    try:
+        data = request.get_json()
+        log_directory = data.get('log_directory', '').strip()
+        
+        if not log_directory or not os.path.exists(log_directory):
+            return jsonify({'error': 'Invalid log directory path'}), 400
+        
+        # Find failed logs
+        failed_files = find_failed_logs(log_directory)
+        if not failed_files:
+            return jsonify({'error': 'No failed log files (_F.zip) found in directory'}), 400
+        
+        # Create output directory
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_dir = os.path.join(tempfile.gettempdir(), f'w3a_failure_analysis_{timestamp}')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Create temporary directory for extraction
+        temp_dir = os.path.join(tempfile.gettempdir(), f'w3a_failure_temp_{timestamp}')
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        try:
+            # Process each failed log
+            all_failures = []
+            failed_test_counts = Counter()
+            first_error_counts = Counter()
+            
+            for failed_file in failed_files:
+                failure_data = extract_and_parse_failed_log(failed_file, temp_dir)
+                if failure_data:
+                    all_failures.append(failure_data)
+                    
+                    # Count failed tests
+                    for failed_test in failure_data['failed_tests']:
+                        failed_test_counts[failed_test['test_id']] += 1
+                    
+                    # Count first errors
+                    if failure_data['first_error_item']:
+                        first_error_counts[failure_data['first_error_item']] += 1
+            
+            if not all_failures:
+                return jsonify({'error': 'No valid failure data found in logs'}), 400
+            
+            # Generate Pareto charts
+            create_pareto_chart(failed_test_counts, "All Failed Tests", 
+                              os.path.join(output_dir, 'failed_tests_pareto.png'))
+            
+            create_pareto_chart(first_error_counts, "First Error Types", 
+                              os.path.join(output_dir, 'first_errors_pareto.png'))
+            
+            # Generate summary statistics
+            top_failed_tests = failed_test_counts.most_common(10)
+            top_first_errors = first_error_counts.most_common(10)
+            
+            return jsonify({
+                'success': True,
+                'total_failed_logs': len(all_failures),
+                'total_failed_files': len(failed_files),
+                'unique_failed_tests': len(failed_test_counts),
+                'unique_first_errors': len(first_error_counts),
+                'top_failed_tests': top_failed_tests,
+                'top_first_errors': top_first_errors,
+                'output_dir': output_dir,
+                'pareto_charts': {
+                    'failed_tests': os.path.join(output_dir, 'failed_tests_pareto.png'),
+                    'first_errors': os.path.join(output_dir, 'first_errors_pareto.png')
+                }
+            })
+            
+        finally:
+            # Cleanup temp directory
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                
+    except Exception as e:
+        return jsonify({'error': f'Analysis error: {str(e)}'}), 500
