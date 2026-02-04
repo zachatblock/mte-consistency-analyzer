@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}W3A Test Analysis - Home{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <div class="hero-content">
+        <h1>W3A Test Analysis</h1>
+        <p class="hero-subtitle">Manufacturing Test Data Analysis and Visualization</p>
+        <div class="hero-buttons">
+            <a href="{{ url_for('consistency.index') }}" class="btn btn-primary">Generate Consistency Plots</a>
+            <a href="#features" class="btn btn-secondary">Learn More</a>
+        </div>
+    </div>
+</div>
+
+<div class="features-section" id="features">
+    <div class="container">
+        <h2>Features</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <h3>Consistency Plots</h3>
+                <p>Generate statistical process control charts with ±3σ limits for parametric test data.</p>
+                <ul>
+                    <li>Automatic outlier detection</li>
+                    <li>Pass/Fail status tracking</li>
+                    <li>Serial number color coding</li>
+                    <li>Flexible test plan handling</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3>Data Processing</h3>
+                <p>Process hundreds of test logs efficiently with robust error handling.</p>
+                <ul>
+                    <li>Batch processing of zip files</li>
+                    <li>Numeric data filtering</li>
+                    <li>Missing data handling</li>
+                    <li>Summary statistics</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3>Visualization</h3>
+                <p>Clear, informative plots with detailed statistics and control limits.</p>
+                <ul>
+                    <li>Interactive plot generation</li>
+                    <li>Multiple output formats</li>
+                    <li>Customizable styling</li>
+                    <li>Export capabilities</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="stats-section">
+    <div class="container">
+        <h2>Recent Analysis</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number">49</div>
+                <div class="stat-label">Unique Tests</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">2,449</div>
+                <div class="stat-label">Total Measurements</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">84</div>
+                <div class="stat-label">Logs Processed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">5</div>
+                <div class="stat-label">OOC Tests</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

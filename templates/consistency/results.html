@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}Consistency Plots Results - W3A Test Analysis{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: 2rem;">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Consistency Plots Generated Successfully! 🎉</h2>
+            <p>Your W3A test data has been processed and consistency plots have been generated.</p>
+        </div>
+        <div class="card-body">
+            <div class="stats-section">
+                <h3>Processing Summary</h3>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number">{{ results.total_tests }}</div>
+                        <div class="stat-label">Unique Tests</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">{{ results.total_samples }}</div>
+                        <div class="stat-label">Total Measurements</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">{{ results.csv_files_processed }}</div>
+                        <div class="stat-label">CSV Files Processed</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">{{ results.plots_generated }}</div>
+                        <div class="stat-label">Plots Generated</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="download-section" style="margin-top: 2rem;">
+                <h3>Download Results</h3>
+                <div class="download-buttons">
+                    {% if results.summary_path %}
+                    <a href="{{ url_for('consistency.download_file', filename=results.summary_path) }}" 
+                       class="btn btn-primary">
+                        📊 Download Summary Report (CSV)
+                    </a>
+                    {% endif %}
+                    <button onclick="openOutputFolder()" class="btn btn-secondary">
+                        📁 Open Output Folder
+                    </button>
+                </div>
+                <p class="download-info">
+                    <strong>Output Location:</strong> <code>{{ results.output_dir }}</code><br>
+                    <small>All plots are saved as PNG files in this directory.</small>
+                </p>
+            </div>
+
+            {% if stats %}
+            <div class="test-results-section" style="margin-top: 2rem;">
+                <h3>Test Results Overview</h3>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Test Name</th>
+                                <th>Samples</th>
+                                <th>SN 549</th>
+                                <th>SN 602</th>
+                                <th>Pass</th>
+                                <th>Fail</th>
+                                <th>Mean</th>
+                                <th>Std Dev</th>
+                                <th>OOC Points</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for stat in stats[:20] %}
+                            <tr>
+                                <td><strong>{{ stat.test_id }}</strong></td>
+                                <td>{{ stat.n_samples }}</td>
+                                <td><span class="badge badge-red">{{ stat.n_sn549 }}</span></td>
+                                <td><span class="badge badge-blue">{{ stat.n_sn602 }}</span></td>
+                                <td><span class="badge badge-green">{{ stat.n_pass }}</span></td>
+                                <td><span class="badge badge-orange">{{ stat.n_fail }}</span></td>
+                                <td>{{ "%.2f"|format(stat.mean) }}</td>
+                                <td>{{ "%.2f"|format(stat.std) }}</td>
+                                <td>
+                                    {% if stat.out_of_control_total > 0 %}
+                                        <span class="badge badge-warning">{{ stat.out_of_control_total }}</span>
+                                    {% else %}
+                                        <span class="badge badge-success">0</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% if stats|length > 20 %}
+                            <tr>
+                                <td colspan="9" class="text-center">
+                                    <em>... and {{ stats|length - 20 }} more tests (see full report for details)</em>
+                                </td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="actions-section" style="margin-top: 2rem;">
+                <a href="{{ url_for('consistency.index') }}" class="btn btn-primary">
+                    🔄 Generate More Plots
+                </a>
+                <a href="{{ url_for('main.index') }}" class="btn btn-secondary">
+                    🏠 Back to Home
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.download-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.download-info {
+    background-color: #f8f9fa;
+    padding: 1rem;
+    border-radius: 6px;
+    border-left: 4px solid #3498db;
+    margin-top: 1rem;
+}
+
+.download-info code {
+    background-color: #e9ecef;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.table th,
+.table td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.table-responsive {
+    overflow-x: auto;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 0.375rem;
+    color: white;
+}
+
+.badge-red { background-color: #dc3545; }
+.badge-blue { background-color: #007bff; }
+.badge-green { background-color: #28a745; }
+.badge-orange { background-color: #fd7e14; }
+.badge-warning { background-color: #ffc107; color: #212529; }
+.badge-success { background-color: #28a745; }
+
+.actions-section {
+    text-align: center;
+    padding-top: 2rem;
+    border-top: 1px solid #dee2e6;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openOutputFolder() {
+    const outputDir = '{{ results.output_dir }}';
+    // This would typically require a backend endpoint to open the folder
+    // For now, we'll show the path
+    alert('Output folder location:\n' + outputDir + '\n\nOpen this path in Finder/Explorer to view your plots.');
+}
+
+// Auto-scroll to results if there are many
+document.addEventListener('DOMContentLoaded', function() {
+    const resultsSection = document.querySelector('.test-results-section');
+    if (resultsSection) {
+        resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+});
+</script>
+{% endblock %}

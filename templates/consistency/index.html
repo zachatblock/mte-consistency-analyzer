@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}Consistency Plots - W3A Test Analysis{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: 2rem;">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Generate Consistency Plots</h2>
+            <p>Upload your W3A test logs to generate statistical process control charts with ±3σ limits.</p>
+        </div>
+        <div class="card-body">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div id="alert-container">
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'error' if category == 'error' else category }}">
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="{{ url_for('consistency.generate_plots') }}" id="consistency-form">
+                <div class="form-group">
+                    <label for="log_directory">Log Directory Path *</label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="log_directory" 
+                           name="log_directory" 
+                           placeholder="/path/to/your/w3a/logs"
+                           required>
+                    <small class="form-text text-muted">
+                        Enter the full path to the directory containing your W3A test logs (zip files or extracted CSV files).
+                    </small>
+                </div>
+
+                <div class="config-section">
+                    <h4>Configuration Files (Optional)</h4>
+                    <p class="text-muted">Provide test plan and step config files to overlay expected limits on plots.</p>
+                    
+                    <div class="form-group">
+                        <label for="test_plan_path">Test Plan YAML File</label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="test_plan_path" 
+                               name="test_plan_path" 
+                               placeholder="{{ example_config_dir }}/test_plan_w3a_mlb_test.yaml">
+                        <small class="form-text text-muted">
+                            Path to the test plan YAML file (e.g., test_plan_w3a_mlb_test.yaml).
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="step_config_path">Step Config YAML File</label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="step_config_path" 
+                               name="step_config_path" 
+                               placeholder="{{ example_config_dir }}/step_config_w3a_mlb_test.yaml">
+                        <small class="form-text text-muted">
+                            Path to the step config YAML file (e.g., step_config_w3a_mlb_test.yaml).
+                        </small>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <button type="submit" class="btn btn-primary" id="generate-btn">
+                        <span id="btn-text">Generate Consistency Plots</span>
+                        <span id="loading-spinner" style="display: none;">
+                            Processing... ⏳
+                        </span>
+                    </button>
+                </div>
+            </form>
+
+            <div class="info-section" style="margin-top: 2rem;">
+                <h3>What This Tool Does</h3>
+                <div class="features-grid" style="margin-top: 1rem;">
+                    <div class="feature-card">
+                        <h4>📊 Statistical Process Control</h4>
+                        <p>Generates control charts with mean ± 3σ limits to identify out-of-control measurements.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🎨 Serial Number Color Coding</h4>
+                        <p>Red markers for SN 549xxx, blue markers for SN 602xxx to track different batches.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>✅ Pass/Fail Tracking</h4>
+                        <p>Distinguishes between measurements from passing vs failing units.</p>
+                    </div>
+                </div>
+
+                <h3 style="margin-top: 2rem;">Supported Data Formats</h3>
+                <ul>
+                    <li><strong>Zip Files:</strong> Automatically extracts and processes parametric CSV files</li>
+                    <li><strong>CSV Files:</strong> Directly processes *_parametric.csv files</li>
+                    <li><strong>Flexible Structure:</strong> Handles missing tests and varying test plans</li>
+                    <li><strong>Numeric Filtering:</strong> Only processes float-type measurements</li>
+                </ul>
+
+                <h3 style="margin-top: 2rem;">Example Paths</h3>
+                <div class="example-paths">
+                    <code>/Volumes/slimthicc/0112 testing</code><br>
+                    <code>/Users/zachstanziano/Downloads/aws-logs-w3a-w3a_mlb_test-2026-01-12T03-54-06</code><br>
+                    <code>/path/to/your/extracted/logs</code>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.example-paths {
+    background-color: #f8f9fa;
+    padding: 1rem;
+    border-radius: 6px;
+    border-left: 4px solid #3498db;
+}
+
+.example-paths code {
+    display: block;
+    margin: 0.5rem 0;
+    padding: 0.25rem 0.5rem;
+    background-color: #e9ecef;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+}
+
+.info-section h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
+.info-section h4 {
+    color: #3498db;
+    margin-bottom: 0.5rem;
+}
+
+.form-text {
+    color: #6c757d;
+    font-size: 0.875rem;
+}
+
+.config-section {
+    background-color: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 6px;
+    margin: 1.5rem 0;
+    border-left: 4px solid #17a2b8;
+}
+
+.config-section h4 {
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.config-section p {
+    margin-bottom: 1rem;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('consistency-form').addEventListener('submit', function(e) {
+    const btn = document.getElementById('generate-btn');
+    const btnText = document.getElementById('btn-text');
+    const spinner = document.getElementById('loading-spinner');
+    
+    // Show loading state
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    spinner.style.display = 'inline';
+    
+    // Validate form
+    const logDir = document.getElementById('log_directory').value.trim();
+    if (!logDir) {
+        e.preventDefault();
+        alert('Please enter a log directory path.');
+        
+        // Reset button
+        btn.disabled = false;
+        btnText.style.display = 'inline';
+        spinner.style.display = 'none';
+        return;
+    }
+});
+
+// Auto-remove alerts after 5 seconds
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() {
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(function(alert) {
+            alert.style.transition = 'opacity 0.5s';
+            alert.style.opacity = '0';
+            setTimeout(function() {
+                alert.remove();
+            }, 500);
+        });
+    }, 5000);
+});
+</script>
+{% endblock %}
