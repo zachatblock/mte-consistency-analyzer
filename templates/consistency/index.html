@@ -910,6 +910,24 @@ function generateConsistencyResultsHtml(data) {
                                     </div>
                                 </div>
                             ` : ''}
+                            
+                            ${plot.limit_recommendations && plot.limit_recommendations.has_recommendations ? `
+                                <div style="margin-top: 1rem; padding: 0.75rem; background: #e7f3ff; border: 1px solid #007bff; border-radius: 6px;">
+                                    <div style="color: #0066cc; font-weight: bold; font-size: 0.9rem; margin-bottom: 0.5rem;">
+                                        💡 LIMIT RECOMMENDATIONS
+                                    </div>
+                                    <div style="font-size: 0.85rem; color: #333;">
+                                        <div style="background: #f8f9fa; padding: 0.5rem; border-radius: 4px; font-family: monospace;">
+                                            <strong>Current:</strong> LSL ${plot.limit_recommendations.current_lsl !== null ? plot.limit_recommendations.current_lsl.toFixed(3) : 'None'}, 
+                                            USL ${plot.limit_recommendations.current_usl !== null ? plot.limit_recommendations.current_usl.toFixed(3) : 'None'}<br>
+                                            <strong>Recommended:</strong> LSL ${plot.limit_recommendations.recommended_lsl.toFixed(3)}, 
+                                            USL ${plot.limit_recommendations.recommended_usl.toFixed(3)}
+                                        </div>
+                                        ${plot.limit_recommendations.reason_lsl ? `<div style="margin-top: 0.5rem; color: #666;">• ${plot.limit_recommendations.reason_lsl}</div>` : ''}
+                                        ${plot.limit_recommendations.reason_usl ? `<div style="margin-top: 0.25rem; color: #666;">• ${plot.limit_recommendations.reason_usl}</div>` : ''}
+                                    </div>
+                                </div>
+                            ` : ''}
                         </div>
                         `;
                     }).join('')}

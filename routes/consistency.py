@@ -1107,6 +1107,62 @@ def generate_consistency_plots():
         print(f"DEBUG: Consistency plot error: {str(e)}")
         return jsonify({'error': f'Consistency plot generation error: {str(e)}'}), 500
 
+def calculate_limit_recommendations(values, mean, std, current_usl=None, current_lsl=None):
+    """Calculate recommended USL/LSL limits based on statistical analysis."""
+    recommendations = {}
+    
+    # Calculate statistical limits (±3σ from mean)
+    statistical_ucl = mean + 3 * std
+    statistical_lcl = mean - 3 * std
+    
+    # Recommended limits: slightly wider than ±3σ for manufacturing tolerance
+    # Use ±3.5σ or ±4σ depending on the application
+    recommended_usl = mean + 3.5 * std
+    recommended_lsl = mean - 3.5 * std
+    
+    # Check if current limits need adjustment
+    needs_usl_recommendation = False
+    needs_lsl_recommendation = False
+    
+    if current_usl is None:
+        # Missing USL - recommend one
+        needs_usl_recommendation = True
+        recommendations['reason_usl'] = "Missing USL limit"
+    elif abs(current_usl - statistical_ucl) > 0.1 * abs(statistical_ucl):
+        # Current USL is more than 10% different from statistical limit
+        if current_usl < statistical_ucl:
+            needs_usl_recommendation = True
+            recommendations['reason_usl'] = f"Current USL ({current_usl:.3f}) is too tight (< UCL {statistical_ucl:.3f})"
+        elif current_usl > recommended_usl * 1.2:
+            needs_usl_recommendation = True
+            recommendations['reason_usl'] = f"Current USL ({current_usl:.3f}) may be too loose (> 1.2×recommended)"
+    
+    if current_lsl is None:
+        # Missing LSL - recommend one
+        needs_lsl_recommendation = True
+        recommendations['reason_lsl'] = "Missing LSL limit"
+    elif abs(current_lsl - statistical_lcl) > 0.1 * abs(statistical_lcl):
+        # Current LSL is more than 10% different from statistical limit
+        if current_lsl > statistical_lcl:
+            needs_lsl_recommendation = True
+            recommendations['reason_lsl'] = f"Current LSL ({current_lsl:.3f}) is too tight (> LCL {statistical_lcl:.3f})"
+        elif current_lsl < recommended_lsl * 1.2:
+            needs_lsl_recommendation = True
+            recommendations['reason_lsl'] = f"Current LSL ({current_lsl:.3f}) may be too loose (< 1.2×recommended)"
+    
+    if needs_usl_recommendation or needs_lsl_recommendation:
+        recommendations['has_recommendations'] = True
+        recommendations['current_lsl'] = current_lsl
+        recommendations['current_usl'] = current_usl
+        recommendations['recommended_lsl'] = recommended_lsl
+        recommendations['recommended_usl'] = recommended_usl
+        recommendations['statistical_lcl'] = statistical_lcl
+        recommendations['statistical_ucl'] = statistical_ucl
+    else:
+        recommendations['has_recommendations'] = False
+    
+    return recommendations
+
 def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_info=None):
     """Create a consistency plot with USL/LSL limits extracted from the CSV data."""
     df = pd.DataFrame(test_data)
@@ -1148,6 +1204,9 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
             break
     
     print(f"DEBUG: Test {test_id} - Found limits in data: USL={usl}, LSL={lsl}")
+    
+    # Calculate limit recommendations
+    limit_recommendations = calculate_limit_recommendations(values, mean, std, usl, lsl)
     
     # Separate by SN prefix (549 or 602)
     sn_starts_549 = np.array([str(sn).startswith('549') if sn else False for sn in serial_numbers])
@@ -1285,7 +1344,8 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
         'usl': float(usl) if usl is not None else None,
         'lsl': float(lsl) if lsl is not None else None,
         'plot_path': output_path,
-        'plot_base64': plot_base64
+        'plot_base64': plot_base64,
+        'limit_recommendations': limit_recommendations
     }
 
 
