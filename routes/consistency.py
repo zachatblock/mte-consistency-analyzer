@@ -678,8 +678,8 @@ def extract_and_parse_failed_log(path, temp_dir):
                     
                     # Parse the CSV and check if it actually represents a failed unit
                     failure_data = parse_parametric_csv_for_failures(csv_path)
-                    if failure_data and (failure_data.get('failed_tests') or failure_data.get('overall_result') == 'FAIL'):
-                        print(f"DEBUG: Confirmed failed unit with {len(failure_data.get('failed_tests', []))} failed tests")
+                    if failure_data and (failure_data.get('first_error_item') or failure_data.get('overall_result') == 'FAIL'):
+                        print(f"DEBUG: Confirmed failed unit - first error: {failure_data.get('first_error_item')}")
                         return failure_data
                     else:
                         print(f"DEBUG: Unit appears to have passed - skipping")
@@ -693,14 +693,13 @@ def extract_and_parse_failed_log(path, temp_dir):
         return {}
 
 def parse_parametric_csv_for_failures(csv_path):
-    """Parse parametric CSV and extract failure information."""
+    """Parse parametric CSV and extract only the first failure information."""
     filename = os.path.basename(csv_path)
     serial_number = extract_sn_from_filename(filename)
     
     failure_info = {
         'serial_number': serial_number,
         'source_file': filename,
-        'failed_tests': [],
         'first_error_code': None,
         'first_error_item': None,
         'overall_result': None
@@ -710,53 +709,21 @@ def parse_parametric_csv_for_failures(csv_path):
         with open(csv_path, 'r') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                test_result = row.get('test_result', '')
                 test_id = row.get('test_id', '')
-                test_group = row.get('test_group', '')
-                test_type = row.get('type', '')
                 
-                # Extract summary information first
+                # Extract only the summary information - this is what we care about
                 if test_id == 'FIRST_ERROR_CODE':
                     failure_info['first_error_code'] = row.get('ret', '')
+                    print(f"DEBUG: Found first error code: {failure_info['first_error_code']}")
                     continue
                 elif test_id == 'FIRST_ERROR_ITEM_TYPE':
                     failure_info['first_error_item'] = row.get('ret', '')
+                    print(f"DEBUG: Found first error item: {failure_info['first_error_item']}")
                     continue
                 elif test_id == 'OVERALL_TEST_RESULT':
                     failure_info['overall_result'] = row.get('ret', '')
+                    print(f"DEBUG: Found overall result: {failure_info['overall_result']}")
                     continue
-                
-                # Skip summary rows and non-test entries
-                if test_group == 'Summary' or test_group == '':
-                    continue
-                    
-                # Skip infrastructure/setup steps that shouldn't be counted as test failures
-                infrastructure_steps = [
-                    'DELAY_1_SECONDS', 'DELAY_2_SECONDS', 'DELAY_3_SECONDS',
-                    'ACQUIRE_DMM_LOCK', 'RELEASE_DMM_LOCK',
-                    'CONNECT_', 'DISCONNECT_', 'SET_', 'RESET_', 'TURN_',
-                    'OVERALL_TEST_RESULT'
-                ]
-                
-                # Check if this is an infrastructure step
-                is_infrastructure = any(test_id.startswith(step) for step in infrastructure_steps)
-                if is_infrastructure:
-                    continue
-                
-                # Only count actual test failures (not infrastructure or summary)
-                if test_result == 'FAIL' and test_type in ['float', 'int', 'bool']:
-                    # This is a real test failure
-                    failure_info['failed_tests'].append({
-                        'test_id': test_id,
-                        'test_group': test_group,
-                        'lo_limit': row.get('lo_limit', ''),
-                        'hi_limit': row.get('hi_limit', ''),
-                        'unit': row.get('unit', ''),
-                        'ret': row.get('ret', ''),
-                        'execution_time': row.get('execution_time', '')
-                    })
-                    
-                    print(f"DEBUG: Found real test failure: {test_id} in group {test_group}")
     
     except Exception as e:
         print(f"Error reading CSV {csv_path}: {e}")
@@ -908,9 +875,8 @@ def analyze_failures():
         os.makedirs(temp_dir, exist_ok=True)
         
         try:
-            # Process each failed log
+            # Process each failed log - focus only on first error items
             all_failures = []
-            failed_test_counts = Counter()
             first_error_counts = Counter()
             
             for failed_file in failed_files:
@@ -918,39 +884,29 @@ def analyze_failures():
                 if failure_data:
                     all_failures.append(failure_data)
                     
-                    # Count failed tests
-                    for failed_test in failure_data['failed_tests']:
-                        failed_test_counts[failed_test['test_id']] += 1
-                    
-                    # Count first errors
-                    if failure_data['first_error_item']:
+                    # Count only the first error (which should be the root cause)
+                    if failure_data.get('first_error_item'):
                         first_error_counts[failure_data['first_error_item']] += 1
+                        print(f"DEBUG: Counted first error: {failure_data['first_error_item']} for SN {failure_data.get('serial_number')}")
             
             if not all_failures:
                 return jsonify({'error': 'No valid failure data found in logs'}), 400
             
-            # Generate Pareto charts
-            create_pareto_chart(failed_test_counts, "All Failed Tests", 
-                              os.path.join(output_dir, 'failed_tests_pareto.png'))
-            
-            create_pareto_chart(first_error_counts, "First Error Types", 
+            # Generate Pareto chart for first errors only
+            create_pareto_chart(first_error_counts, "First Error Types (Root Cause Analysis)", 
                               os.path.join(output_dir, 'first_errors_pareto.png'))
             
             # Generate summary statistics
-            top_failed_tests = failed_test_counts.most_common(10)
             top_first_errors = first_error_counts.most_common(10)
             
             return jsonify({
                 'success': True,
                 'total_failed_logs': len(all_failures),
                 'total_failed_files': len(failed_files),
-                'unique_failed_tests': len(failed_test_counts),
                 'unique_first_errors': len(first_error_counts),
-                'top_failed_tests': top_failed_tests,
                 'top_first_errors': top_first_errors,
                 'output_dir': output_dir,
                 'pareto_charts': {
-                    'failed_tests': os.path.join(output_dir, 'failed_tests_pareto.png'),
                     'first_errors': os.path.join(output_dir, 'first_errors_pareto.png')
                 }
             })
