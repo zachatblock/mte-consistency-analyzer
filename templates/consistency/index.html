@@ -807,48 +807,40 @@ function displayCombinedResults(results) {
 function generateParetoResultsHtml(data) {
     return `
         <div style="margin-bottom: 2rem; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #dc3545;">
-            <h3 style="color: #dc3545; margin-bottom: 1rem;">🔍 Failure Pareto Analysis</h3>
+            <h3 style="color: #dc3545; margin-bottom: 1rem;">🔍 Failure Pareto Analysis (Root Cause)</h3>
             
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
                 <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
                     <div style="font-size: 2rem; font-weight: bold; color: #dc3545;">${data.total_failed_logs}</div>
-                    <div style="color: #666;">Failed Logs Analyzed</div>
-                </div>
-                <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
-                    <div style="font-size: 2rem; font-weight: bold; color: #fd7e14;">${data.unique_failed_tests}</div>
-                    <div style="color: #666;">Unique Failed Tests</div>
+                    <div style="color: #666;">Failed Units Analyzed</div>
                 </div>
                 <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
                     <div style="font-size: 2rem; font-weight: bold; color: #6f42c1;">${data.unique_first_errors}</div>
-                    <div style="color: #666;">Unique First Errors</div>
+                    <div style="color: #666;">Unique Root Causes</div>
+                </div>
+                <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
+                    <div style="font-size: 2rem; font-weight: bold; color: #28a745;">${data.total_failed_files}</div>
+                    <div style="color: #666;">Log Files Processed</div>
                 </div>
             </div>
             
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
-                <div>
-                    <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">🔥 Top Failed Tests:</h4>
-                    <ol style="margin: 0; padding-left: 1.5rem;">
-                        ${data.top_failed_tests.map(([test, count]) => 
-                            `<li style="margin: 0.25rem 0;"><strong>${test}</strong>: ${count} failures</li>`
-                        ).join('')}
-                    </ol>
-                </div>
-                <div>
-                    <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">⚠️ Top First Errors:</h4>
-                    <ol style="margin: 0; padding-left: 1.5rem;">
-                        ${data.top_first_errors.map(([error, count]) => 
-                            `<li style="margin: 0.25rem 0;"><strong>${error}</strong>: ${count} occurrences</li>`
-                        ).join('')}
-                    </ol>
-                </div>
+            <div style="margin-bottom: 1.5rem;">
+                <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">🔥 Top Root Causes (First Error Types):</h4>
+                <ol style="margin: 0; padding-left: 1.5rem; background: white; padding: 1rem; border-radius: 6px;">
+                    ${data.top_first_errors && data.top_first_errors.length > 0 ? 
+                        data.top_first_errors.map(([error, count]) => 
+                            `<li style="margin: 0.5rem 0;"><strong>${error}</strong>: ${count} occurrences</li>`
+                        ).join('') :
+                        '<li style="color: #666;">No first error data available</li>'
+                    }
+                </ol>
             </div>
             
             <div style="margin-top: 1.5rem; padding: 1rem; background: #e7f3ff; border-radius: 6px;">
-                <h4 style="color: #0066cc; margin-bottom: 0.5rem;">📊 Pareto Charts Generated:</h4>
+                <h4 style="color: #0066cc; margin-bottom: 0.5rem;">📊 Pareto Chart Generated:</h4>
                 <p style="margin: 0; color: #666;">
-                    Charts saved to: <code>${data.output_dir}</code><br>
-                    • Failed Tests Pareto Chart<br>
-                    • First Errors Pareto Chart
+                    Chart saved to: <code>${data.output_dir}</code><br>
+                    • First Error Types (Root Cause Analysis) Chart
                 </p>
             </div>
         </div>
