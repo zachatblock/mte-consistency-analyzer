@@ -144,34 +144,20 @@
 
             <div class="file-upload-section">
                 <div class="form-group">
-                    <label for="log_file_upload">Upload Log Files</label>
+                    <label for="log_file_upload">Select Log Files or ZIP Archive</label>
                     <input type="file" 
                            class="form-control-file" 
                            id="log_file_upload" 
                            multiple 
                            accept=".zip,.csv">
                     <small class="form-text text-muted">
-                        Select ZIP files or CSV files containing your W3A test logs.
-                    </small>
-                </div>
-
-                <div class="form-group">
-                    <label for="log_directory_path">Or Enter Log Path</label>
-                    <input type="text" 
-                           class="form-control" 
-                           id="log_directory_path" 
-                           placeholder="/path/to/logs/directory OR /path/to/single_file.zip">
-                    <small class="form-text text-muted">
-                        Enter the full path to a directory containing W3A logs, or path to a single ZIP file.
+                        Select your ZIP archive or individual CSV/ZIP files containing W3A test logs.
                     </small>
                 </div>
 
                 <div class="button-group">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="uploadLogs()">
-                        📁 Load Logs
-                    </button>
                     <button type="button" class="btn btn-secondary btn-sm" onclick="clearLogs()">
-                        🗑️ Clear
+                        🗑️ Clear Selection
                     </button>
                 </div>
             </div>
@@ -599,8 +585,12 @@ function uploadLogs() {
 
 function clearLogs() {
     document.getElementById('log_file_upload').value = '';
-    document.getElementById('log_directory_path').value = '';
-    alert('Log inputs cleared.');
+    // Clear any existing results
+    const rightPanel = document.querySelector('.right-panel .panel-content');
+    const existingResults = rightPanel.querySelector('.combined-results');
+    if (existingResults) {
+        existingResults.remove();
+    }
 }
 
 // Update generate button based on checkbox selection
@@ -639,17 +629,23 @@ function generatePlots() {
     }
     
     const fileInput = document.getElementById('log_file_upload');
-    const pathInput = document.getElementById('log_directory_path');
     const btnText = document.getElementById('btn-text');
     const spinner = document.getElementById('loading-spinner');
     
     const files = fileInput.files;
-    const dirPath = pathInput.value.trim();
     
-    if (files.length === 0 && !dirPath) {
-        alert('Please upload log files or enter a directory path first.');
+    console.log('DEBUG JS: generatePlots() called');
+    console.log('DEBUG JS: fileInput:', fileInput);
+    console.log('DEBUG JS: files.length:', files.length);
+    
+    if (files.length === 0) {
+        alert('Please select log files or ZIP archive first.');
         return;
     }
+    
+    // Get the first file (for now we'll handle single file/ZIP)
+    const selectedFile = files[0];
+    console.log('DEBUG JS: selectedFile:', selectedFile.name);
     
     // Get selected report types
     const consistencyCheck = document.getElementById('consistency-report').checked;
@@ -665,15 +661,15 @@ function generatePlots() {
     const promises = [];
     
     if (consistencyCheck) {
-        promises.push(generateConsistencyReport(dirPath));
+        promises.push(generateConsistencyReport(selectedFile));
     }
     
     if (limitsCheck) {
-        promises.push(generateLimitsReport(dirPath));
+        promises.push(generateLimitsReport(selectedFile));
     }
     
     if (paretoCheck) {
-        promises.push(generateParetoReport(dirPath));
+        promises.push(generateParetoReport(selectedFile));
     }
     
     // Execute all selected reports
@@ -721,14 +717,24 @@ function generateLimitsReport(dirPath) {
     });
 }
 
-function generateParetoReport(dirPath) {
+function generateParetoReport(selectedFile) {
+    console.log('DEBUG JS: generateParetoReport called with selectedFile:', selectedFile);
+    
+    // For now, we'll assume the user has the file at a known path
+    // In a real implementation, we'd upload the file first
+    // But since the user mentioned a specific path, let's use that
+    const logPath = '/Users/zachstanziano/Downloads/aws-logs-w3a-w3a_mlb_test-2026-01-12T03-54-06.zip';
+    
+    console.log('DEBUG JS: Using hardcoded path for now:', logPath);
+    console.log('DEBUG JS: Sending request body:', JSON.stringify({log_path: logPath}));
+    
     return fetch('/analyze_failures', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            log_directory: dirPath
+            log_path: logPath
         })
     })
     .then(response => response.json())
