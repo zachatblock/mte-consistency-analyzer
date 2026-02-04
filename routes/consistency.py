@@ -21,6 +21,8 @@ import tempfile
 import shutil
 from datetime import datetime
 import yaml
+from scipy import stats
+from sklearn.ensemble import IsolationForest
 
 warnings.filterwarnings('ignore')
 
@@ -74,6 +76,7 @@ def find_parametric_csv(log_dir):
         
         print(f"DEBUG: Found {len(csv_files)} parametric CSV files after nested extraction")
         print(f"DEBUG: Created {len(temp_extracts)} temporary extraction directories")
+        print(f"DEBUG: Sample CSV paths: {csv_files[:5] if csv_files else 'None'}")
         return csv_files
         
     except Exception as e:
@@ -190,10 +193,16 @@ def parse_csv_file(csv_path):
     filename = os.path.basename(csv_path)
     serial_number = extract_sn_from_filename(filename)
     
+    # Debug: Track what we find in each file
+    total_rows = 0
+    float_rows = 0
+    other_types = set()
+    
     try:
         with open(csv_path, 'r') as f:
             reader = csv.DictReader(f)
             for row in reader:
+                total_rows += 1
                 try:
                     test_id = row.get('test_id', '')
                     test_type = row.get('type', '')
@@ -204,13 +213,18 @@ def parse_csv_file(csv_path):
                     lo_limit = row.get('lo_limit', '')
                     hi_limit = row.get('hi_limit', '')
                     
-                    if test_type != 'FLOAT':
-                        continue
+                    # Track all test types we see
+                    if test_type:
+                        other_types.add(test_type)
                     
+                    # Try to parse as numeric even if not explicitly marked as FLOAT
+                    # This catches INT, DOUBLE, or unmarked numeric values
                     try:
                         value = float(ret_value)
                         if abs(value) > 1e30:
                             continue
+                        
+                        float_rows += 1
                         
                         # Parse limits if they exist
                         low_limit = None
@@ -239,9 +253,15 @@ def parse_csv_file(csv_path):
                             'high_limit': high_limit
                         })
                     except (ValueError, TypeError):
+                        # Not a numeric value, skip
                         continue
                 except Exception as e:
                     continue
+        
+        # Debug output for files with no data
+        if not test_data and total_rows > 0:
+            print(f"DEBUG: {filename} - {total_rows} total rows, {float_rows} numeric, types found: {other_types}")
+            
     except Exception as e:
         print(f"Error reading {csv_path}: {e}")
     
@@ -252,10 +272,43 @@ def collect_all_test_data(log_dir):
     csv_files = find_parametric_csv(log_dir)
     all_tests = defaultdict(list)
     
-    for csv_file in csv_files:
+    print(f"DEBUG: Starting to process {len(csv_files)} CSV files for test data collection")
+    
+    files_processed = 0
+    files_with_data = 0
+    total_data_points = 0
+    
+    for i, csv_file in enumerate(csv_files):
+        if i % 100 == 0:  # Progress update every 100 files
+            print(f"DEBUG: Processing CSV file {i+1}/{len(csv_files)}: {os.path.basename(csv_file)}")
+        
+        # Check if file exists before trying to parse
+        if not os.path.exists(csv_file):
+            print(f"DEBUG: WARNING - CSV file does not exist: {csv_file}")
+            continue
+            
         test_data = parse_csv_file(csv_file)
-        for test in test_data:
-            all_tests[test['test_id']].append(test)
+        files_processed += 1
+        
+        if test_data:
+            files_with_data += 1
+            for test in test_data:
+                all_tests[test['test_id']].append(test)
+                total_data_points += 1
+        else:
+            print(f"DEBUG: No test data extracted from: {os.path.basename(csv_file)}")
+    
+    print(f"DEBUG: Collection complete - Processed {files_processed} files, {files_with_data} had data")
+    print(f"DEBUG: Total data points collected: {total_data_points}")
+    print(f"DEBUG: Unique test IDs found: {len(all_tests)}")
+    
+    # Show sample counts for first few tests
+    test_sample_counts = [(test_id, len(data)) for test_id, data in all_tests.items()]
+    test_sample_counts.sort(key=lambda x: x[1], reverse=True)
+    
+    print(f"DEBUG: Top 5 tests by sample count:")
+    for test_id, count in test_sample_counts[:5]:
+        print(f"DEBUG:   {test_id}: {count} samples")
     
     return all_tests, len(csv_files)
 
@@ -280,6 +333,26 @@ def create_consistency_plot(test_id, test_data, output_dir):
     
     # Identify out-of-control points
     out_of_control = (values > ucl) | (values < lcl)
+    
+    # Extract limits from the data itself (they're in the CSV files!)
+    usl = None
+    lsl = None
+    has_limits = False
+    
+    # Check if any data points have limit information
+    for data_point in test_data:
+        if data_point.get('high_limit') is not None:
+            usl = data_point['high_limit']
+            has_limits = True
+            break
+    
+    for data_point in test_data:
+        if data_point.get('low_limit') is not None:
+            lsl = data_point['low_limit']
+            has_limits = True
+            break
+    
+    print(f"DEBUG: Test {test_id} - Found limits in data: USL={usl}, LSL={lsl}")
     
     # Separate by SN prefix (549 or 602)
     sn_starts_549 = np.array([str(sn).startswith('549') if sn else False for sn in serial_numbers])
@@ -324,10 +397,21 @@ def create_consistency_plot(test_id, test_data, output_dir):
     # Connect all points with a line
     ax.plot(x, values, 'gray', linewidth=0.5, alpha=0.3, zorder=1)
     
-    # Plot control limits
+    # Plot control limits (±3σ)
     ax.axhline(y=mean, color='g', linestyle='-', linewidth=2, label=f'Mean = {mean:.2f}')
     ax.axhline(y=ucl, color='orange', linestyle='--', linewidth=2, label=f'UCL (+3σ) = {ucl:.2f}')
     ax.axhline(y=lcl, color='orange', linestyle='--', linewidth=2, label=f'LCL (-3σ) = {lcl:.2f}')
+    
+    # Plot USL/LSL limits if available from the CSV data (blue dashed lines)
+    usl_violations = 0
+    lsl_violations = 0
+    if has_limits:
+        if usl is not None:
+            ax.axhline(y=usl, color='blue', linestyle='--', linewidth=2, alpha=0.8, label=f'USL = {usl:.2f}')
+            usl_violations = np.sum(values > usl)
+        if lsl is not None:
+            ax.axhline(y=lsl, color='blue', linestyle='--', linewidth=2, alpha=0.8, label=f'LSL = {lsl:.2f}')
+            lsl_violations = np.sum(values < lsl)
     
     unit = df['unit'].iloc[0] if 'unit' in df.columns and df['unit'].iloc[0] else ''
     unit_str = f" ({unit})" if unit else ""
@@ -355,6 +439,12 @@ def create_consistency_plot(test_id, test_data, output_dir):
     stats_text += f' Max: {np.max(values):.2f}\n'
     stats_text += f' OOC Total: {np.sum(out_of_control)}'
     
+    if has_limits:
+        if usl is not None:
+            stats_text += f'\n USL Violations: {usl_violations}'
+        if lsl is not None:
+            stats_text += f'\n LSL Violations: {lsl_violations}'
+    
     ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, verticalalignment='top',
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
             fontsize=9, family='monospace')
@@ -380,6 +470,11 @@ def create_consistency_plot(test_id, test_data, output_dir):
         'min': np.min(values),
         'max': np.max(values),
         'out_of_control_total': int(np.sum(out_of_control)),
+        'usl_violations': int(usl_violations),
+        'lsl_violations': int(lsl_violations),
+        'has_limits': bool(has_limits),
+        'usl': float(usl) if usl is not None else None,
+        'lsl': float(lsl) if lsl is not None else None,
         'plot_path': output_path
     }
 
@@ -1107,6 +1202,164 @@ def generate_consistency_plots():
         print(f"DEBUG: Consistency plot error: {str(e)}")
         return jsonify({'error': f'Consistency plot generation error: {str(e)}'}), 500
 
+def detect_outliers_multiple_methods(values, test_id=""):
+    """Detect outliers using multiple methods and return comprehensive outlier information."""
+    values = np.array(values)
+    n = len(values)
+    
+    if n < 10:  # Need reasonable sample size for outlier detection
+        return {
+            'has_outliers': False,
+            'outlier_indices': np.array([]),
+            'outlier_values': np.array([]),
+            'methods_used': [],
+            'outlier_summary': f"Insufficient samples ({n}) for outlier detection"
+        }
+    
+    outlier_methods = {}
+    
+    # Method 1: IQR (Interquartile Range) - Classic and robust
+    q1 = np.percentile(values, 25)
+    q3 = np.percentile(values, 75)
+    iqr = q3 - q1
+    
+    if iqr > 0:  # Avoid division by zero
+        iqr_lower = q1 - 1.5 * iqr
+        iqr_upper = q3 + 1.5 * iqr
+        iqr_outliers = (values < iqr_lower) | (values > iqr_upper)
+        outlier_methods['IQR'] = {
+            'outliers': iqr_outliers,
+            'count': np.sum(iqr_outliers),
+            'bounds': (iqr_lower, iqr_upper),
+            'description': f"IQR method: Q1={q1:.2f}, Q3={q3:.2f}, bounds=[{iqr_lower:.2f}, {iqr_upper:.2f}]"
+        }
+    
+    # Method 2: Modified Z-Score - Good for detecting extreme outliers
+    median = np.median(values)
+    mad = np.median(np.abs(values - median))  # Median Absolute Deviation
+    
+    if mad > 0:  # Avoid division by zero
+        modified_z_scores = 0.6745 * (values - median) / mad
+        z_threshold = 3.5  # Common threshold for modified z-score
+        z_outliers = np.abs(modified_z_scores) > z_threshold
+        outlier_methods['Modified_Z'] = {
+            'outliers': z_outliers,
+            'count': np.sum(z_outliers),
+            'threshold': z_threshold,
+            'description': f"Modified Z-Score: median={median:.2f}, MAD={mad:.2f}, threshold={z_threshold}"
+        }
+    
+    # Method 3: Isolation Forest - Machine learning approach
+    try:
+        from sklearn.ensemble import IsolationForest
+        iso_forest = IsolationForest(contamination=0.1, random_state=42)  # Expect 10% outliers max
+        outlier_predictions = iso_forest.fit_predict(values.reshape(-1, 1))
+        iso_outliers = outlier_predictions == -1
+        outlier_methods['Isolation_Forest'] = {
+            'outliers': iso_outliers,
+            'count': np.sum(iso_outliers),
+            'contamination': 0.1,
+            'description': f"Isolation Forest: contamination=0.1, detected {np.sum(iso_outliers)} outliers"
+        }
+    except Exception as e:
+        print(f"DEBUG: Isolation Forest failed for {test_id}: {e}")
+    
+    # Method 4: Statistical outliers (beyond 3 standard deviations)
+    mean_val = np.mean(values)
+    std_val = np.std(values)
+    if std_val > 0:
+        stat_outliers = np.abs(values - mean_val) > 3 * std_val
+        outlier_methods['Statistical_3Sigma'] = {
+            'outliers': stat_outliers,
+            'count': np.sum(stat_outliers),
+            'bounds': (mean_val - 3*std_val, mean_val + 3*std_val),
+            'description': f"3-Sigma: mean={mean_val:.2f}, std={std_val:.2f}, bounds=[{mean_val-3*std_val:.2f}, {mean_val+3*std_val:.2f}]"
+        }
+    
+    # Combine methods using voting (at least 2 methods must agree)
+    if len(outlier_methods) >= 2:
+        all_outlier_arrays = [method['outliers'] for method in outlier_methods.values()]
+        outlier_votes = np.sum(all_outlier_arrays, axis=0)
+        
+        # Require at least 2 methods to agree for an outlier
+        consensus_outliers = outlier_votes >= 2
+        consensus_count = np.sum(consensus_outliers)
+        
+        # For resistance tests specifically, be more aggressive with outlier detection
+        # If we see values that are orders of magnitude different, flag them
+        if 'res' in test_id.lower() or 'resistance' in test_id.lower():
+            # For resistance tests, look for values that are >100x the median (likely open circuits)
+            resistance_threshold = 100 * median if median > 0 else 1e6
+            extreme_outliers = values > resistance_threshold
+            consensus_outliers = consensus_outliers | extreme_outliers
+            consensus_count = np.sum(consensus_outliers)
+            
+            if np.sum(extreme_outliers) > 0:
+                outlier_methods['Resistance_Extreme'] = {
+                    'outliers': extreme_outliers,
+                    'count': np.sum(extreme_outliers),
+                    'threshold': resistance_threshold,
+                    'description': f"Resistance extreme: >100x median ({resistance_threshold:.0f}Ω)"
+                }
+        
+    else:
+        consensus_outliers = np.zeros(n, dtype=bool)
+        consensus_count = 0
+    
+    # Calculate impact on statistics
+    original_mean = np.mean(values)
+    original_std = np.std(values)
+    
+    if consensus_count > 0:
+        clean_values = values[~consensus_outliers]
+        if len(clean_values) > 3:  # Need minimum samples for statistics
+            clean_mean = np.mean(clean_values)
+            clean_std = np.std(clean_values)
+            
+            mean_change_pct = abs(clean_mean - original_mean) / abs(original_mean) * 100 if original_mean != 0 else 0
+            std_change_pct = abs(clean_std - original_std) / abs(original_std) * 100 if original_std != 0 else 0
+            
+            impact_significant = mean_change_pct > 5 or std_change_pct > 10  # 5% mean change or 10% std change
+        else:
+            clean_mean = original_mean
+            clean_std = original_std
+            mean_change_pct = 0
+            std_change_pct = 0
+            impact_significant = False
+    else:
+        clean_mean = original_mean
+        clean_std = original_std
+        mean_change_pct = 0
+        std_change_pct = 0
+        impact_significant = False
+    
+    # Create summary
+    method_names = list(outlier_methods.keys())
+    outlier_summary = f"Methods: {', '.join(method_names)}. "
+    outlier_summary += f"Consensus: {consensus_count}/{n} outliers ({consensus_count/n*100:.1f}%). "
+    outlier_summary += f"Mean change: {mean_change_pct:.1f}%, Std change: {std_change_pct:.1f}%"
+    
+    return {
+        'has_outliers': consensus_count > 0,
+        'outlier_indices': np.where(consensus_outliers)[0],
+        'outlier_values': values[consensus_outliers],
+        'clean_indices': np.where(~consensus_outliers)[0],
+        'clean_values': values[~consensus_outliers],
+        'methods_used': method_names,
+        'method_details': outlier_methods,
+        'consensus_count': consensus_count,
+        'total_samples': n,
+        'outlier_percentage': consensus_count/n*100,
+        'original_mean': original_mean,
+        'original_std': original_std,
+        'clean_mean': clean_mean,
+        'clean_std': clean_std,
+        'mean_change_percent': mean_change_pct,
+        'std_change_percent': std_change_pct,
+        'impact_significant': impact_significant,
+        'outlier_summary': outlier_summary
+    }
+
 def calculate_limit_recommendations(values, mean, std, current_usl=None, current_lsl=None):
     """Calculate recommended USL/LSL limits based on statistical analysis."""
     recommendations = {}
@@ -1163,15 +1416,10 @@ def calculate_limit_recommendations(values, mean, std, current_usl=None, current
     
     return recommendations
 
-def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_info=None):
-    """Create a consistency plot with USL/LSL limits extracted from the CSV data."""
-    df = pd.DataFrame(test_data)
-    df = df.sort_values('timestamp')
-    
-    values = df['value'].values
-    test_results = df['test_result'].values
-    serial_numbers = df['serial_number'].values
-    
+def create_single_consistency_plot(test_id, values, test_results, serial_numbers, 
+                                 usl=None, lsl=None, plot_title_suffix="", 
+                                 outlier_info=None, clean_data=False):
+    """Create a single consistency plot with the given data."""
     n = len(values)
     if n < 3:
         return None
@@ -1184,29 +1432,6 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
     
     # Identify out-of-control points
     out_of_control = (values > ucl) | (values < lcl)
-    
-    # Extract limits from the data itself (they're in the CSV files!)
-    usl = None
-    lsl = None
-    has_limits = False
-    
-    # Check if any data points have limit information
-    for data_point in test_data:
-        if data_point.get('high_limit') is not None:
-            usl = data_point['high_limit']
-            has_limits = True
-            break
-    
-    for data_point in test_data:
-        if data_point.get('low_limit') is not None:
-            lsl = data_point['low_limit']
-            has_limits = True
-            break
-    
-    print(f"DEBUG: Test {test_id} - Found limits in data: USL={usl}, LSL={lsl}")
-    
-    # Calculate limit recommendations
-    limit_recommendations = calculate_limit_recommendations(values, mean, std, usl, lsl)
     
     # Separate by SN prefix (549 or 602)
     sn_starts_549 = np.array([str(sn).startswith('549') if sn else False for sn in serial_numbers])
@@ -1248,6 +1473,14 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
     if np.any(sn602_fail_ooc):
         ax.plot(np.where(sn602_fail_ooc)[0], values[sn602_fail_ooc], 'bx', markersize=10, markeredgewidth=2, label='SN 602 OOC FAIL', zorder=5)
     
+    # Highlight outliers if this is the original plot and we have outlier info
+    if outlier_info and outlier_info['has_outliers'] and not clean_data:
+        outlier_indices = outlier_info['outlier_indices']
+        if len(outlier_indices) > 0:
+            ax.scatter(outlier_indices, values[outlier_indices], 
+                      s=100, facecolors='none', edgecolors='purple', linewidths=3, 
+                      label=f'Outliers ({len(outlier_indices)})', zorder=10)
+    
     # Connect all points with a line
     ax.plot(x, values, 'gray', linewidth=0.5, alpha=0.3, zorder=1)
     
@@ -1256,23 +1489,23 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
     ax.axhline(y=ucl, color='orange', linestyle='--', linewidth=2, label=f'UCL (+3σ) = {ucl:.2f}')
     ax.axhline(y=lcl, color='orange', linestyle='--', linewidth=2, label=f'LCL (-3σ) = {lcl:.2f}')
     
-    # Plot USL/LSL limits if available from the CSV data
+    # Plot USL/LSL limits if available
     usl_violations = 0
     lsl_violations = 0
-    if has_limits:
-        if usl is not None:
-            ax.axhline(y=usl, color='red', linestyle='-', linewidth=2, alpha=0.8, label=f'USL = {usl:.2f}')
-            usl_violations = np.sum(values > usl)
-        if lsl is not None:
-            ax.axhline(y=lsl, color='red', linestyle='-', linewidth=2, alpha=0.8, label=f'LSL = {lsl:.2f}')
-            lsl_violations = np.sum(values < lsl)
+    has_limits = usl is not None or lsl is not None
     
-    unit = df['unit'].iloc[0] if 'unit' in df.columns and df['unit'].iloc[0] else ''
-    unit_str = f" ({unit})" if unit else ""
+    if usl is not None:
+        ax.axhline(y=usl, color='red', linestyle='-', linewidth=2, alpha=0.8, label=f'USL = {usl:.2f}')
+        usl_violations = np.sum(values > usl)
+    if lsl is not None:
+        ax.axhline(y=lsl, color='red', linestyle='-', linewidth=2, alpha=0.8, label=f'LSL = {lsl:.2f}')
+        lsl_violations = np.sum(values < lsl)
     
     ax.set_xlabel('Sample Number', fontsize=12)
-    ax.set_ylabel(f'Measured Value{unit_str}', fontsize=12)
-    ax.set_title(f'Consistency Plot: {test_id}\nn={n}, μ={mean:.2f}, σ={std:.2f}', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Measured Value', fontsize=12)
+    
+    title = f'Consistency Plot: {test_id}{plot_title_suffix}\nn={n}, μ={mean:.2f}, σ={std:.2f}'
+    ax.set_title(title, fontsize=14, fontweight='bold')
     ax.legend(loc='best', fontsize=8, ncol=2)
     ax.grid(True, alpha=0.3)
     
@@ -1299,33 +1532,22 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
         if lsl is not None:
             stats_text += f'\n LSL Violations: {lsl_violations}'
     
+    # Add outlier information to stats if available
+    if outlier_info and outlier_info['has_outliers']:
+        if clean_data:
+            stats_text += f'\n Outliers Removed: {outlier_info["consensus_count"]}'
+            stats_text += f'\n Mean Change: {outlier_info["mean_change_percent"]:.1f}%'
+            stats_text += f'\n Std Change: {outlier_info["std_change_percent"]:.1f}%'
+        else:
+            stats_text += f'\n Outliers Detected: {outlier_info["consensus_count"]} ({outlier_info["outlier_percentage"]:.1f}%)'
+    
     ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, verticalalignment='top',
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
             fontsize=9, family='monospace')
     
     plt.tight_layout()
     
-    # Save to buffer for inline display
-    import io
-    import base64
-    
-    buffer = io.BytesIO()
-    plt.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
-    buffer.seek(0)
-    plot_data = buffer.getvalue()
-    buffer.close()
-    
-    # Also save to file for export functionality
-    safe_filename = test_id.replace('/', '_').replace('\\', '_')
-    output_path = os.path.join(output_dir, f'{safe_filename}_consistency.png')
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    plt.close()
-    
-    # Convert to base64 for inline display
-    plot_base64 = base64.b64encode(plot_data).decode('utf-8')
-    
-    return {
-        'test_id': test_id,
+    return fig, {
         'n_samples': int(n),
         'n_sn549': int(n_sn549),
         'n_sn602': int(n_sn602),
@@ -1342,11 +1564,161 @@ def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_in
         'lsl_violations': int(lsl_violations),
         'has_limits': bool(has_limits),
         'usl': float(usl) if usl is not None else None,
-        'lsl': float(lsl) if lsl is not None else None,
-        'plot_path': output_path,
-        'plot_base64': plot_base64,
-        'limit_recommendations': limit_recommendations
+        'lsl': float(lsl) if lsl is not None else None
     }
+
+def create_consistency_plot_with_limits(test_id, test_data, output_dir, limit_info=None):
+    """Create consistency plots with USL/LSL limits and outlier detection - generates dual plots if outliers found."""
+    df = pd.DataFrame(test_data)
+    df = df.sort_values('timestamp')
+    
+    values = df['value'].values
+    test_results = df['test_result'].values
+    serial_numbers = df['serial_number'].values
+    
+    n = len(values)
+    if n < 3:
+        return None
+    
+    # Extract limits from the data itself (they're in the CSV files!)
+    usl = None
+    lsl = None
+    has_limits = False
+    
+    # Check if any data points have limit information
+    for data_point in test_data:
+        if data_point.get('high_limit') is not None:
+            usl = data_point['high_limit']
+            has_limits = True
+            break
+    
+    for data_point in test_data:
+        if data_point.get('low_limit') is not None:
+            lsl = data_point['low_limit']
+            has_limits = True
+            break
+    
+    print(f"DEBUG: Test {test_id} - Found limits in data: USL={usl}, LSL={lsl}")
+    
+    # Detect outliers using multiple methods
+    outlier_info = detect_outliers_multiple_methods(values, test_id)
+    print(f"DEBUG: Test {test_id} - Outlier detection: {outlier_info['outlier_summary']}")
+    
+    # Calculate limit recommendations (using original data)
+    original_mean = np.mean(values)
+    original_std = np.std(values, ddof=1)
+    limit_recommendations = calculate_limit_recommendations(values, original_mean, original_std, usl, lsl)
+    
+    # Create plots
+    plots_generated = []
+    
+    # Always create the original plot
+    fig_original, stats_original = create_single_consistency_plot(
+        test_id, values, test_results, serial_numbers, usl, lsl, 
+        plot_title_suffix="", outlier_info=outlier_info, clean_data=False
+    )
+    
+    if fig_original:
+        # Save original plot
+        safe_filename = test_id.replace('/', '_').replace('\\', '_')
+        original_path = os.path.join(output_dir, f'{safe_filename}_consistency_original.png')
+        fig_original.savefig(original_path, dpi=150, bbox_inches='tight')
+        
+        # Convert to base64 for inline display
+        import io
+        import base64
+        buffer = io.BytesIO()
+        fig_original.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
+        buffer.seek(0)
+        plot_data = buffer.getvalue()
+        buffer.close()
+        original_base64 = base64.b64encode(plot_data).decode('utf-8')
+        plt.close(fig_original)
+        
+        plots_generated.append({
+            'plot_type': 'original',
+            'plot_path': original_path,
+            'plot_base64': original_base64,
+            'stats': stats_original
+        })
+    
+    # Create cleaned plot if significant outliers are detected
+    cleaned_base64 = None
+    cleaned_path = None
+    stats_cleaned = None
+    
+    if outlier_info['has_outliers'] and outlier_info['impact_significant']:
+        print(f"DEBUG: Test {test_id} - Creating cleaned plot (outliers impact significant)")
+        
+        # Create cleaned dataset
+        clean_indices = outlier_info['clean_indices']
+        clean_values = values[clean_indices]
+        clean_test_results = test_results[clean_indices]
+        clean_serial_numbers = serial_numbers[clean_indices]
+        
+        # Create cleaned plot
+        fig_cleaned, stats_cleaned = create_single_consistency_plot(
+            test_id, clean_values, clean_test_results, clean_serial_numbers, usl, lsl,
+            plot_title_suffix=" (Outliers Removed)", outlier_info=outlier_info, clean_data=True
+        )
+        
+        if fig_cleaned:
+            # Save cleaned plot
+            cleaned_path = os.path.join(output_dir, f'{safe_filename}_consistency_cleaned.png')
+            fig_cleaned.savefig(cleaned_path, dpi=150, bbox_inches='tight')
+            
+            # Convert to base64 for inline display
+            buffer = io.BytesIO()
+            fig_cleaned.savefig(buffer, format='png', dpi=150, bbox_inches='tight')
+            buffer.seek(0)
+            plot_data = buffer.getvalue()
+            buffer.close()
+            cleaned_base64 = base64.b64encode(plot_data).decode('utf-8')
+            plt.close(fig_cleaned)
+            
+            plots_generated.append({
+                'plot_type': 'cleaned',
+                'plot_path': cleaned_path,
+                'plot_base64': cleaned_base64,
+                'stats': stats_cleaned
+            })
+    
+    # Return comprehensive results
+    result = {
+        'test_id': test_id,
+        'has_outliers': outlier_info['has_outliers'],
+        'outlier_info': outlier_info,
+        'limit_recommendations': limit_recommendations,
+        'plots_generated': plots_generated,
+        'dual_plots': len(plots_generated) > 1
+    }
+    
+    # Add original plot stats to top level for backward compatibility
+    if plots_generated:
+        original_stats = plots_generated[0]['stats']
+        result.update({
+            'n_samples': original_stats['n_samples'],
+            'n_sn549': original_stats['n_sn549'],
+            'n_sn602': original_stats['n_sn602'],
+            'n_pass': original_stats['n_pass'],
+            'n_fail': original_stats['n_fail'],
+            'mean': original_stats['mean'],
+            'std': original_stats['std'],
+            'ucl': original_stats['ucl'],
+            'lcl': original_stats['lcl'],
+            'min': original_stats['min'],
+            'max': original_stats['max'],
+            'out_of_control_total': original_stats['out_of_control_total'],
+            'usl_violations': original_stats['usl_violations'],
+            'lsl_violations': original_stats['lsl_violations'],
+            'has_limits': original_stats['has_limits'],
+            'usl': original_stats['usl'],
+            'lsl': original_stats['lsl'],
+            'plot_path': plots_generated[0]['plot_path'],
+            'plot_base64': plots_generated[0]['plot_base64']
+        })
+    
+    return result
 
 
 @consistency_bp.route('/export_plots', methods=['POST'])
