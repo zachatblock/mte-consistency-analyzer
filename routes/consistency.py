@@ -49,10 +49,14 @@ def find_parametric_csv(log_dir):
                 elif file.endswith('.zip'):
                     zip_path = os.path.join(root, file)
                     try:
-                        # Create temp extraction directory for this ZIP
-                        extract_dir = os.path.join(log_dir, f'temp_extract_{file.replace(".zip", "")}')
+                        # Create temp extraction directory for this ZIP in system temp directory
+                        # NOT in the log_dir which might be the user's Desktop!
+                        temp_base = tempfile.gettempdir()
+                        extract_dir = os.path.join(temp_base, f'w3a_nested_extract_{file.replace(".zip", "")}_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
                         os.makedirs(extract_dir, exist_ok=True)
                         temp_extracts.append(extract_dir)
+                        
+                        print(f"DEBUG: Extracting nested ZIP {zip_path} to temp dir: {extract_dir}")
                         
                         # Extract the ZIP
                         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -69,6 +73,7 @@ def find_parametric_csv(log_dir):
                         continue
         
         print(f"DEBUG: Found {len(csv_files)} parametric CSV files after nested extraction")
+        print(f"DEBUG: Created {len(temp_extracts)} temporary extraction directories")
         return csv_files
         
     except Exception as e:
