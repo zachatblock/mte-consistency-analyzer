@@ -34,13 +34,46 @@ def extract_sn_from_filename(filename):
     return None
 
 def find_parametric_csv(log_dir):
-    """Find all parametric CSV files in directory tree."""
+    """Find all parametric CSV files in directory tree, extracting nested ZIPs if needed."""
     csv_files = []
-    for root, dirs, files in os.walk(log_dir):
-        for file in files:
-            if file.endswith('_parametric.csv'):
-                csv_files.append(os.path.join(root, file))
-    return csv_files
+    temp_extracts = []  # Keep track of temporary extraction directories
+    
+    try:
+        for root, dirs, files in os.walk(log_dir):
+            # Look for direct CSV files first
+            for file in files:
+                if file.endswith('_parametric.csv'):
+                    csv_files.append(os.path.join(root, file))
+                
+                # Also extract any ZIP files we find (unit logs)
+                elif file.endswith('.zip'):
+                    zip_path = os.path.join(root, file)
+                    try:
+                        # Create temp extraction directory for this ZIP
+                        extract_dir = os.path.join(log_dir, f'temp_extract_{file.replace(".zip", "")}')
+                        os.makedirs(extract_dir, exist_ok=True)
+                        temp_extracts.append(extract_dir)
+                        
+                        # Extract the ZIP
+                        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                            zip_ref.extractall(extract_dir)
+                        
+                        # Look for parametric CSV files in the extracted content
+                        for sub_root, sub_dirs, sub_files in os.walk(extract_dir):
+                            for sub_file in sub_files:
+                                if sub_file.endswith('_parametric.csv'):
+                                    csv_files.append(os.path.join(sub_root, sub_file))
+                                    
+                    except Exception as e:
+                        print(f"DEBUG: Error extracting nested ZIP {zip_path}: {e}")
+                        continue
+        
+        print(f"DEBUG: Found {len(csv_files)} parametric CSV files after nested extraction")
+        return csv_files
+        
+    except Exception as e:
+        print(f"DEBUG: Error in find_parametric_csv: {e}")
+        return csv_files
 
 def parse_test_plan_yaml(yaml_path):
     """Parse test plan YAML file to get test groups and steps."""
