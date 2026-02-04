@@ -542,11 +542,18 @@ def read_file_path():
 # Failure Analysis Functions
 def find_failed_logs(log_dir):
     """Find all failed log files (ending with _F.zip)."""
+    print(f"DEBUG: Searching for failed logs in directory: {log_dir}")
     failed_files = []
+    total_files = 0
     for root, dirs, files in os.walk(log_dir):
+        print(f"DEBUG: Checking directory: {root}")
         for file in files:
+            total_files += 1
             if file.endswith('_F.zip'):
-                failed_files.append(os.path.join(root, file))
+                failed_file_path = os.path.join(root, file)
+                failed_files.append(failed_file_path)
+                print(f"DEBUG: Found failed log: {failed_file_path}")
+    print(f"DEBUG: Searched {total_files} total files, found {len(failed_files)} failed logs")
     return failed_files
 
 def extract_and_parse_failed_log(zip_path, temp_dir):
@@ -691,35 +698,53 @@ def analyze_failures():
         data = request.get_json()
         log_path = data.get('log_directory', '').strip()
         
-        if not log_path or not os.path.exists(log_path):
-            return jsonify({'error': 'Invalid log directory or file path'}), 400
+        print(f"DEBUG: Received log_path: '{log_path}'")
+        print(f"DEBUG: log_path exists: {os.path.exists(log_path) if log_path else 'No path provided'}")
+        print(f"DEBUG: log_path is file: {os.path.isfile(log_path) if log_path else 'No path provided'}")
+        print(f"DEBUG: log_path is dir: {os.path.isdir(log_path) if log_path else 'No path provided'}")
+        
+        if not log_path:
+            return jsonify({'error': 'No log directory or file path provided'}), 400
+            
+        if not os.path.exists(log_path):
+            return jsonify({'error': f'Path does not exist: {log_path}'}), 400
         
         # Handle both single ZIP file and directory
         failed_files = []
         
         if os.path.isfile(log_path) and log_path.endswith('.zip'):
+            print(f"DEBUG: Processing ZIP file: {log_path}")
             # Single ZIP file provided
             if '_F.zip' in log_path:
+                print("DEBUG: This is a single failed log file")
                 # This is a single failed log file
                 failed_files = [log_path]
             else:
+                print("DEBUG: This is a ZIP archive - extracting to search for failed logs")
                 # This might be a ZIP containing multiple logs - extract and search
                 temp_extract_dir = os.path.join(tempfile.gettempdir(), f'w3a_zip_extract_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+                print(f"DEBUG: Creating temp extract dir: {temp_extract_dir}")
                 os.makedirs(temp_extract_dir, exist_ok=True)
                 
                 try:
                     # Extract the ZIP file
+                    print("DEBUG: Extracting ZIP file...")
                     with zipfile.ZipFile(log_path, 'r') as zip_ref:
                         zip_ref.extractall(temp_extract_dir)
+                    print("DEBUG: ZIP extraction complete")
                     
                     # Look for failed logs in the extracted content
+                    print("DEBUG: Searching for failed logs in extracted content...")
                     failed_files = find_failed_logs(temp_extract_dir)
+                    print(f"DEBUG: Found {len(failed_files)} failed log files")
                     
                     if not failed_files:
+                        print("DEBUG: No failed logs found - cleaning up and returning error")
                         shutil.rmtree(temp_extract_dir)
                         return jsonify({'error': 'No failed log files (_F.zip) found inside the ZIP archive'}), 400
                         
                 except Exception as e:
+                    print(f"DEBUG: Error during ZIP extraction: {str(e)}")
                     if os.path.exists(temp_extract_dir):
                         shutil.rmtree(temp_extract_dir)
                     return jsonify({'error': f'Error extracting ZIP file: {str(e)}'}), 400
