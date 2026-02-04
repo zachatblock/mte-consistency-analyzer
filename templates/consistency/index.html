@@ -176,9 +176,31 @@
                 </div>
             </div>
 
-            <div class="form-group">
-                <button type="button" class="btn btn-primary" id="generate-plots-btn" onclick="generatePlots()">
-                    <span id="btn-text">Generate Consistency Plots</span>
+            <div class="report-selection-section">
+                <h4>Report Types</h4>
+                <div class="checkbox-group">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="consistency-report" onchange="updateGenerateButton()">
+                        <label class="form-check-label" for="consistency-report">
+                            Generate Consistency Report
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="limits-report" onchange="updateGenerateButton()">
+                        <label class="form-check-label" for="limits-report">
+                            Generate Limits Report
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="failure-pareto" onchange="updateGenerateButton()">
+                        <label class="form-check-label" for="failure-pareto">
+                            Generate Failure Pareto
+                        </label>
+                    </div>
+                </div>
+                
+                <button type="button" class="btn btn-primary btn-lg w-100 mt-3" id="generate-plots-btn" onclick="generatePlots()">
+                    <span id="btn-text">Please select at least one report type</span>
                     <span id="loading-spinner" style="display: none;">
                         Processing... ⏳
                     </span>
@@ -350,6 +372,51 @@
     overflow-y: auto;
     white-space: pre-wrap;
     word-wrap: break-word;
+}
+
+/* Report Selection Styling */
+.report-selection-section {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #007bff;
+}
+
+.report-selection-section h4 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+}
+
+.checkbox-group {
+    margin-bottom: 1rem;
+}
+
+.form-check {
+    margin-bottom: 0.75rem;
+    padding-left: 1.5rem;
+}
+
+.form-check-input {
+    margin-left: -1.5rem;
+    margin-top: 0.25rem;
+}
+
+.form-check-label {
+    color: #495057;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+}
+
+.form-check-input:checked + .form-check-label {
+    color: #007bff;
+}
+
+#generate-plots-btn.disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 </style>
 {% endblock %}
@@ -536,10 +603,43 @@ function clearLogs() {
     alert('Log inputs cleared.');
 }
 
+// Update generate button based on checkbox selection
+function updateGenerateButton() {
+    const consistencyCheck = document.getElementById('consistency-report').checked;
+    const limitsCheck = document.getElementById('limits-report').checked;
+    const paretoCheck = document.getElementById('failure-pareto').checked;
+    
+    const btn = document.getElementById('generate-plots-btn');
+    const btnText = document.getElementById('btn-text');
+    
+    const selectedCount = [consistencyCheck, limitsCheck, paretoCheck].filter(Boolean).length;
+    
+    if (selectedCount === 0) {
+        btnText.textContent = 'Please select at least one report type';
+        btn.classList.add('disabled');
+        btn.disabled = true;
+    } else {
+        let reportTypes = [];
+        if (consistencyCheck) reportTypes.push('Consistency');
+        if (limitsCheck) reportTypes.push('Limits');
+        if (paretoCheck) reportTypes.push('Pareto');
+        
+        btnText.textContent = `Generate ${reportTypes.join(' + ')} Report${selectedCount > 1 ? 's' : ''}`;
+        btn.classList.remove('disabled');
+        btn.disabled = false;
+    }
+}
+
 function generatePlots() {
+    // Check if button is disabled
+    const btn = document.getElementById('generate-plots-btn');
+    if (btn.disabled) {
+        alert('Please select at least one report type first.');
+        return;
+    }
+    
     const fileInput = document.getElementById('log_file_upload');
     const pathInput = document.getElementById('log_directory_path');
-    const btn = document.getElementById('generate-plots-btn');
     const btnText = document.getElementById('btn-text');
     const spinner = document.getElementById('loading-spinner');
     
@@ -551,37 +651,78 @@ function generatePlots() {
         return;
     }
     
+    // Get selected report types
+    const consistencyCheck = document.getElementById('consistency-report').checked;
+    const limitsCheck = document.getElementById('limits-report').checked;
+    const paretoCheck = document.getElementById('failure-pareto').checked;
+    
     // Show loading state
     btn.disabled = true;
     btnText.style.display = 'none';
     spinner.style.display = 'inline';
     
-    // Show options for what to generate
-    const choice = confirm('Choose analysis type:\n\nOK = Consistency Plots (for all logs)\nCancel = Failure Analysis (for failed logs only)');
+    // Process each selected report type
+    const promises = [];
     
-    if (choice) {
-        // Generate consistency plots
-        generateConsistencyPlots(dirPath, btn, btnText, spinner);
-    } else {
-        // Generate failure analysis
-        generateFailureAnalysis(dirPath, btn, btnText, spinner);
+    if (consistencyCheck) {
+        promises.push(generateConsistencyReport(dirPath));
     }
+    
+    if (limitsCheck) {
+        promises.push(generateLimitsReport(dirPath));
+    }
+    
+    if (paretoCheck) {
+        promises.push(generateParetoReport(dirPath));
+    }
+    
+    // Execute all selected reports
+    Promise.all(promises)
+        .then(results => {
+            displayCombinedResults(results);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Report generation failed: ' + error.message);
+        })
+        .finally(() => {
+            // Reset button
+            btn.disabled = false;
+            btnText.style.display = 'inline';
+            spinner.style.display = 'none';
+            updateGenerateButton(); // Restore proper button state
+        });
 }
 
-function generateConsistencyPlots(dirPath, btn, btnText, spinner) {
-    // For now, just simulate processing
-    setTimeout(() => {
-        alert('Consistency plot generation functionality will be implemented next!');
-        
-        // Reset button
-        btn.disabled = false;
-        btnText.style.display = 'inline';
-        spinner.style.display = 'none';
-    }, 1000);
+// Individual report generation functions
+function generateConsistencyReport(dirPath) {
+    return new Promise((resolve, reject) => {
+        // Placeholder for consistency report generation
+        setTimeout(() => {
+            resolve({
+                type: 'consistency',
+                message: 'Consistency report functionality will be implemented next!',
+                success: true
+            });
+        }, 1000);
+    });
 }
 
-function generateFailureAnalysis(dirPath, btn, btnText, spinner) {
-    fetch('/analyze_failures', {
+function generateLimitsReport(dirPath) {
+    return new Promise((resolve, reject) => {
+        // Placeholder for limits report generation
+        setTimeout(() => {
+            resolve({
+                type: 'limits',
+                message: 'Limits report functionality will be implemented next!',
+                success: true
+            });
+        }, 1000);
+    });
+}
+
+function generateParetoReport(dirPath) {
+    return fetch('/analyze_failures', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -593,27 +734,60 @@ function generateFailureAnalysis(dirPath, btn, btnText, spinner) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            displayFailureAnalysisResults(data);
+            return {
+                type: 'pareto',
+                data: data,
+                success: true
+            };
         } else {
-            alert('Failure analysis error: ' + data.error);
+            throw new Error('Pareto analysis error: ' + data.error);
         }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Failure analysis failed: ' + error.message);
-    })
-    .finally(() => {
-        // Reset button
-        btn.disabled = false;
-        btnText.style.display = 'inline';
-        spinner.style.display = 'none';
     });
 }
 
-function displayFailureAnalysisResults(data) {
-    let resultsHtml = `
-        <div style="margin-top: 2rem; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #dc3545;">
-            <h3 style="color: #dc3545; margin-bottom: 1rem;">🔍 Failure Analysis Results</h3>
+function displayCombinedResults(results) {
+    // Clear any existing results
+    const rightPanel = document.querySelector('.right-panel .panel-content');
+    const existingResults = rightPanel.querySelector('.combined-results');
+    
+    if (existingResults) {
+        existingResults.remove();
+    }
+    
+    let combinedHtml = '<div class="combined-results" style="margin-top: 2rem;">';
+    
+    results.forEach(result => {
+        if (result.type === 'consistency') {
+            combinedHtml += `
+                <div style="margin-bottom: 2rem; padding: 1.5rem; background: #e7f3ff; border-radius: 8px; border-left: 4px solid #007bff;">
+                    <h3 style="color: #007bff; margin-bottom: 1rem;">📊 Consistency Report</h3>
+                    <p>${result.message}</p>
+                </div>
+            `;
+        } else if (result.type === 'limits') {
+            combinedHtml += `
+                <div style="margin-bottom: 2rem; padding: 1.5rem; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+                    <h3 style="color: #856404; margin-bottom: 1rem;">📏 Limits Report</h3>
+                    <p>${result.message}</p>
+                </div>
+            `;
+        } else if (result.type === 'pareto') {
+            combinedHtml += generateParetoResultsHtml(result.data);
+        }
+    });
+    
+    combinedHtml += '</div>';
+    
+    // Add to right panel
+    const resultsDiv = document.createElement('div');
+    resultsDiv.innerHTML = combinedHtml;
+    rightPanel.appendChild(resultsDiv);
+}
+
+function generateParetoResultsHtml(data) {
+    return `
+        <div style="margin-bottom: 2rem; padding: 1.5rem; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #dc3545;">
+            <h3 style="color: #dc3545; margin-bottom: 1rem;">🔍 Failure Pareto Analysis</h3>
             
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
                 <div style="background: white; padding: 1rem; border-radius: 6px; text-align: center;">
@@ -633,23 +807,19 @@ function displayFailureAnalysisResults(data) {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
                 <div>
                     <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">🔥 Top Failed Tests:</h4>
-                    <ol style="margin: 0; padding-left: 1.5rem;">`;
-    
-    data.top_failed_tests.forEach(([test, count]) => {
-        resultsHtml += `<li style="margin: 0.25rem 0;"><strong>${test}</strong>: ${count} failures</li>`;
-    });
-    
-    resultsHtml += `</ol>
+                    <ol style="margin: 0; padding-left: 1.5rem;">
+                        ${data.top_failed_tests.map(([test, count]) => 
+                            `<li style="margin: 0.25rem 0;"><strong>${test}</strong>: ${count} failures</li>`
+                        ).join('')}
+                    </ol>
                 </div>
                 <div>
                     <h4 style="color: #2c3e50; margin-bottom: 0.5rem;">⚠️ Top First Errors:</h4>
-                    <ol style="margin: 0; padding-left: 1.5rem;">`;
-    
-    data.top_first_errors.forEach(([error, count]) => {
-        resultsHtml += `<li style="margin: 0.25rem 0;"><strong>${error}</strong>: ${count} occurrences</li>`;
-    });
-    
-    resultsHtml += `</ol>
+                    <ol style="margin: 0; padding-left: 1.5rem;">
+                        ${data.top_first_errors.map(([error, count]) => 
+                            `<li style="margin: 0.25rem 0;"><strong>${error}</strong>: ${count} occurrences</li>`
+                        ).join('')}
+                    </ol>
                 </div>
             </div>
             
@@ -663,19 +833,6 @@ function displayFailureAnalysisResults(data) {
             </div>
         </div>
     `;
-    
-    // Find the right panel content and append results
-    const rightPanel = document.querySelector('.right-panel .panel-content');
-    const existingResults = rightPanel.querySelector('.failure-analysis-results');
-    
-    if (existingResults) {
-        existingResults.innerHTML = resultsHtml;
-    } else {
-        const resultsDiv = document.createElement('div');
-        resultsDiv.className = 'failure-analysis-results';
-        resultsDiv.innerHTML = resultsHtml;
-        rightPanel.appendChild(resultsDiv);
-    }
 }
 </script>
 {% endblock %}
