@@ -3,13 +3,31 @@
 {% block title %}Consistency Plots - W3A Test Analysis{% endblock %}
 
 {% block content %}
-<div class="container" style="padding-top: 2rem;">
-    <div class="card">
-        <div class="card-header">
-            <h2 class="card-title">Generate Consistency Plots</h2>
+<div class="three-panel-layout">
+    <div class="panel left-panel">
+        <div class="panel-header">
+            <h3>Test 1</h3>
+        </div>
+        <div class="panel-content">
+            <p>Test 1 content goes here</p>
+        </div>
+    </div>
+
+    <div class="panel middle-panel">
+        <div class="panel-header">
+            <h3>Test 2</h3>
+        </div>
+        <div class="panel-content">
+            <p>Test 2 content goes here</p>
+        </div>
+    </div>
+
+    <div class="panel right-panel">
+        <div class="panel-header">
+            <h3>Generate Consistency Plots</h3>
             <p>Upload your W3A test logs to generate statistical process control charts with ±3σ limits.</p>
         </div>
-        <div class="card-body">
+        <div class="panel-content">
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     <div id="alert-container">
@@ -112,6 +130,52 @@
 </div>
 
 <style>
+.three-panel-layout {
+    display: flex;
+    height: calc(100vh - 140px);
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.panel {
+    flex: 1;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    overflow-y: auto;
+}
+
+.panel-header {
+    background-color: #f8f9fa;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #dee2e6;
+    border-radius: 8px 8px 0 0;
+}
+
+.panel-header h3 {
+    margin: 0;
+    color: #2c3e50;
+    font-size: 1.25rem;
+}
+
+.panel-header p {
+    margin: 0.5rem 0 0 0;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.panel-content {
+    padding: 1.5rem;
+}
+
+.left-panel, .middle-panel {
+    max-width: 300px;
+}
+
+.right-panel {
+    flex: 2;
+    min-width: 400px;
+}
 .example-paths {
     background-color: #f8f9fa;
     padding: 1rem;

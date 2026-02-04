@@ -63,7 +63,7 @@ body {
 /* Main Content */
 .main-content {
     min-height: calc(100vh - 140px);
-    padding-bottom: 2rem;
+    padding: 0;
 }
 
 /* Hero Section */

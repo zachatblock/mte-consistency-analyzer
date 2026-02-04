@@ -13,11 +13,9 @@ def create_app():
     app.config['SECRET_KEY'] = 'your-secret-key-here'
     
     # Register blueprints
-    from routes.main import main_bp
     from routes.consistency import consistency_bp
     
-    app.register_blueprint(main_bp)
-    app.register_blueprint(consistency_bp, url_prefix='/consistency')
+    app.register_blueprint(consistency_bp)
     
     return app
 
