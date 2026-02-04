@@ -3,22 +3,31 @@
 {% block title %}Consistency Plots - W3A Test Analysis{% endblock %}
 
 {% block content %}
-<div class="three-panel-layout">
+<div class="four-panel-layout">
     <div class="panel left-panel">
         <div class="panel-header">
-            <h3>Test 1</h3>
+            <h3>Test Plan CSV</h3>
         </div>
         <div class="panel-content">
-            <p>Test 1 content goes here</p>
+            <p>Test Plan CSV content goes here</p>
         </div>
     </div>
 
-    <div class="panel middle-panel">
+    <div class="panel second-panel">
         <div class="panel-header">
-            <h3>Test 2</h3>
+            <h3>Test Plan YAML</h3>
         </div>
         <div class="panel-content">
-            <p>Test 2 content goes here</p>
+            <p>Test Plan YAML content goes here</p>
+        </div>
+    </div>
+
+    <div class="panel third-panel">
+        <div class="panel-header">
+            <h3>Step Config YAML</h3>
+        </div>
+        <div class="panel-content">
+            <p>Step Config YAML content goes here</p>
         </div>
     </div>
 
@@ -130,7 +139,7 @@
 </div>
 
 <style>
-.three-panel-layout {
+.four-panel-layout {
     display: flex;
     height: calc(100vh - 140px);
     gap: 1rem;
@@ -168,8 +177,8 @@
     padding: 1.5rem;
 }
 
-.left-panel, .middle-panel {
-    max-width: 300px;
+.left-panel, .second-panel, .third-panel {
+    max-width: 250px;
 }
 
 .right-panel {
