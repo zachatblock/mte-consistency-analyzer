@@ -700,9 +700,29 @@ def analyze_failures():
         if os.path.isfile(log_path) and log_path.endswith('.zip'):
             # Single ZIP file provided
             if '_F.zip' in log_path:
+                # This is a single failed log file
                 failed_files = [log_path]
             else:
-                return jsonify({'error': 'ZIP file must be a failed log (should contain _F.zip)'}), 400
+                # This might be a ZIP containing multiple logs - extract and search
+                temp_extract_dir = os.path.join(tempfile.gettempdir(), f'w3a_zip_extract_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+                os.makedirs(temp_extract_dir, exist_ok=True)
+                
+                try:
+                    # Extract the ZIP file
+                    with zipfile.ZipFile(log_path, 'r') as zip_ref:
+                        zip_ref.extractall(temp_extract_dir)
+                    
+                    # Look for failed logs in the extracted content
+                    failed_files = find_failed_logs(temp_extract_dir)
+                    
+                    if not failed_files:
+                        shutil.rmtree(temp_extract_dir)
+                        return jsonify({'error': 'No failed log files (_F.zip) found inside the ZIP archive'}), 400
+                        
+                except Exception as e:
+                    if os.path.exists(temp_extract_dir):
+                        shutil.rmtree(temp_extract_dir)
+                    return jsonify({'error': f'Error extracting ZIP file: {str(e)}'}), 400
         elif os.path.isdir(log_path):
             # Directory provided - find all failed logs
             failed_files = find_failed_logs(log_path)
