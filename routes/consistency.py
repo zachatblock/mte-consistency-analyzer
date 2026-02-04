@@ -580,53 +580,117 @@ def upload_log_file():
 
 # Failure Analysis Functions
 def find_failed_logs(log_dir):
-    """Find all failed log files (ending with _F.zip)."""
+    """Find all failed log files (ending with _F.zip) or failed directories with parametric CSVs."""
     print(f"DEBUG: Searching for failed logs in directory: {log_dir}")
     failed_files = []
+    failed_dirs = []
     total_files = 0
+    
     for root, dirs, files in os.walk(log_dir):
         print(f"DEBUG: Checking directory: {root}")
+        
+        # Look for _F.zip files (compressed failed logs)
         for file in files:
             total_files += 1
             if file.endswith('_F.zip'):
                 failed_file_path = os.path.join(root, file)
                 failed_files.append(failed_file_path)
-                print(f"DEBUG: Found failed log: {failed_file_path}")
-    print(f"DEBUG: Searched {total_files} total files, found {len(failed_files)} failed logs")
-    return failed_files
+                print(f"DEBUG: Found failed ZIP log: {failed_file_path}")
+        
+        # Look for directories that contain failed units (with parametric CSVs)
+        # These might be named like: 549WP92002000160_FactoryTestProduct_w3a_mlb_test_20251211_161247_slot1_P
+        # or: 550WP92002100121_w3a_mlb_test_20251218_151444_slot1_P
+        for dir_name in dirs:
+            dir_path = os.path.join(root, dir_name)
+            # Check if this directory contains a parametric CSV (indicating it's a unit log directory)
+            for subroot, subdirs, subfiles in os.walk(dir_path):
+                for subfile in subfiles:
+                    if subfile.endswith('_parametric.csv'):
+                        # Check if this is a failed unit by looking at the directory name or CSV content
+                        # For now, we'll assume any directory with parametric CSV could be failed
+                        # The actual failure determination will be done during CSV parsing
+                        failed_dirs.append(dir_path)
+                        print(f"DEBUG: Found potential failed directory with parametric CSV: {dir_path}")
+                        break
+                break  # Only check the first level
+    
+    print(f"DEBUG: Searched {total_files} total files")
+    print(f"DEBUG: Found {len(failed_files)} failed ZIP files")
+    print(f"DEBUG: Found {len(failed_dirs)} directories with parametric CSVs")
+    
+    # Return both ZIP files and directories - we'll handle both in the parsing function
+    return failed_files + failed_dirs
 
-def extract_and_parse_failed_log(zip_path, temp_dir):
-    """Extract a failed log zip and parse the parametric CSV."""
+def extract_and_parse_failed_log(path, temp_dir):
+    """Extract a failed log ZIP or process a directory and parse its parametric CSV"""
     try:
-        # Create unique temp directory for this zip
-        zip_name = os.path.basename(zip_path).replace('.zip', '')
-        extract_dir = os.path.join(temp_dir, zip_name)
-        os.makedirs(extract_dir, exist_ok=True)
+        print(f"DEBUG: Processing path: {path}")
         
-        # Extract zip file
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
+        # Check if this is a ZIP file or a directory
+        if os.path.isfile(path) and path.endswith('.zip'):
+            print(f"DEBUG: Extracting unit ZIP: {path}")
+            
+            # Create extraction directory
+            extract_dir = os.path.join(temp_dir, os.path.basename(path).replace('.zip', ''))
+            os.makedirs(extract_dir, exist_ok=True)
+            print(f"DEBUG: Created extraction directory: {extract_dir}")
+            
+            # Extract the ZIP
+            with zipfile.ZipFile(path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+                print(f"DEBUG: Extracted {len(zip_ref.namelist())} files from unit ZIP")
+            
+            # Show what was extracted
+            print(f"DEBUG: Contents of extracted unit ZIP:")
+            for root, dirs, files in os.walk(extract_dir):
+                level = root.replace(extract_dir, '').count(os.sep)
+                indent = ' ' * 2 * level
+                print(f"DEBUG: {indent}{os.path.basename(root)}/")
+                subindent = ' ' * 2 * (level + 1)
+                for file in files:
+                    print(f"DEBUG: {subindent}{file}")
+            
+            search_dir = extract_dir
+            
+        elif os.path.isdir(path):
+            print(f"DEBUG: Processing directory: {path}")
+            search_dir = path
+            
+            # Show directory contents
+            print(f"DEBUG: Contents of directory:")
+            for root, dirs, files in os.walk(search_dir):
+                level = root.replace(search_dir, '').count(os.sep)
+                indent = ' ' * 2 * level
+                print(f"DEBUG: {indent}{os.path.basename(root)}/")
+                subindent = ' ' * 2 * (level + 1)
+                for file in files:
+                    print(f"DEBUG: {subindent}{file}")
+        else:
+            print(f"DEBUG: Invalid path type: {path}")
+            return {}
         
-        # Find parametric CSV file
-        parametric_file = None
-        for root, dirs, files in os.walk(extract_dir):
+        # Find the parametric CSV file
+        for root, dirs, files in os.walk(search_dir):
             for file in files:
                 if file.endswith('_parametric.csv'):
-                    parametric_file = os.path.join(root, file)
-                    break
-            if parametric_file:
-                break
+                    csv_path = os.path.join(root, file)
+                    print(f"DEBUG: Found parametric CSV: {csv_path}")
+                    
+                    # Parse the CSV and check if it actually represents a failed unit
+                    failure_data = parse_parametric_csv_for_failures(csv_path)
+                    if failure_data and (failure_data.get('failed_tests') or failure_data.get('overall_result') == 'FAIL'):
+                        print(f"DEBUG: Confirmed failed unit with {len(failure_data.get('failed_tests', []))} failed tests")
+                        return failure_data
+                    else:
+                        print(f"DEBUG: Unit appears to have passed - skipping")
+                        return {}
         
-        if not parametric_file:
-            return None
-        
-        # Parse the CSV
-        failure_data = parse_parametric_csv_for_failures(parametric_file)
-        return failure_data
+        print(f"DEBUG: No parametric CSV found in {path}")
+        return {}
         
     except Exception as e:
-        print(f"Error processing {zip_path}: {e}")
-        return None
+        print(f"DEBUG: Error processing {path}: {str(e)}")
+        return {}
 
 def parse_parametric_csv_for_failures(csv_path):
     """Parse parametric CSV and extract failure information."""
@@ -791,16 +855,29 @@ def analyze_failures():
                 os.makedirs(temp_extract_dir, exist_ok=True)
                 
                 try:
-                    # Extract the ZIP file
-                    print("DEBUG: Extracting ZIP file...")
+                    # Extract the main ZIP file
+                    print("DEBUG: Extracting main ZIP file...")
                     with zipfile.ZipFile(log_path, 'r') as zip_ref:
                         zip_ref.extractall(temp_extract_dir)
-                    print("DEBUG: ZIP extraction complete")
+                    print("DEBUG: Main ZIP extraction complete")
                     
-                    # Look for failed logs in the extracted content
-                    print("DEBUG: Searching for failed logs in extracted content...")
+                    # The extracted content contains individual unit ZIP files
+                    # We need to look for _F.zip files (failed units) in the extracted content
+                    print("DEBUG: Searching for failed unit ZIP files in extracted content...")
                     failed_files = find_failed_logs(temp_extract_dir)
-                    print(f"DEBUG: Found {len(failed_files)} failed log files")
+                    print(f"DEBUG: Found {len(failed_files)} failed unit ZIP files")
+                    
+                    # Debug: show what we found
+                    print("DEBUG: Structure of extracted main ZIP:")
+                    for root, dirs, files in os.walk(temp_extract_dir):
+                        level = root.replace(temp_extract_dir, '').count(os.sep)
+                        indent = ' ' * 2 * level
+                        print(f"DEBUG: {indent}{os.path.basename(root)}/")
+                        subindent = ' ' * 2 * (level + 1)
+                        for file in files[:10]:  # Limit to first 10 files per directory
+                            print(f"DEBUG: {subindent}{file}")
+                        if len(files) > 10:
+                            print(f"DEBUG: {subindent}... and {len(files) - 10} more files")
                     
                     if not failed_files:
                         print("DEBUG: No failed logs found - cleaning up and returning error")
