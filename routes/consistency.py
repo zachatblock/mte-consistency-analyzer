@@ -696,7 +696,7 @@ def analyze_failures():
     """Analyze failed logs and generate Pareto charts."""
     try:
         data = request.get_json()
-        log_path = data.get('log_directory', '').strip()
+        log_path = data.get('log_path', '').strip()
         
         print(f"DEBUG: Received log_path: '{log_path}'")
         print(f"DEBUG: log_path exists: {os.path.exists(log_path) if log_path else 'No path provided'}")
