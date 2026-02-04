@@ -689,15 +689,28 @@ def analyze_failures():
     """Analyze failed logs and generate Pareto charts."""
     try:
         data = request.get_json()
-        log_directory = data.get('log_directory', '').strip()
+        log_path = data.get('log_directory', '').strip()
         
-        if not log_directory or not os.path.exists(log_directory):
-            return jsonify({'error': 'Invalid log directory path'}), 400
+        if not log_path or not os.path.exists(log_path):
+            return jsonify({'error': 'Invalid log directory or file path'}), 400
         
-        # Find failed logs
-        failed_files = find_failed_logs(log_directory)
+        # Handle both single ZIP file and directory
+        failed_files = []
+        
+        if os.path.isfile(log_path) and log_path.endswith('.zip'):
+            # Single ZIP file provided
+            if '_F.zip' in log_path:
+                failed_files = [log_path]
+            else:
+                return jsonify({'error': 'ZIP file must be a failed log (should contain _F.zip)'}), 400
+        elif os.path.isdir(log_path):
+            # Directory provided - find all failed logs
+            failed_files = find_failed_logs(log_path)
+        else:
+            return jsonify({'error': 'Path must be either a directory or a ZIP file'}), 400
+        
         if not failed_files:
-            return jsonify({'error': 'No failed log files (_F.zip) found in directory'}), 400
+            return jsonify({'error': 'No failed log files (_F.zip) found'}), 400
         
         # Create output directory
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
