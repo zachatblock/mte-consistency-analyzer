@@ -168,13 +168,7 @@
                     <div class="form-check">
                         <input class="form-check-input" type="checkbox" id="consistency-report" onchange="updateGenerateButton()">
                         <label class="form-check-label" for="consistency-report">
-                            Generate Consistency Report
-                        </label>
-                    </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="limits-report" onchange="updateGenerateButton()">
-                        <label class="form-check-label" for="limits-report">
-                            Generate Limits Report
+                            Generate Consistency Plots (with USL/LSL limits)
                         </label>
                     </div>
                     <div class="form-check">
@@ -596,13 +590,12 @@ function clearLogs() {
 // Update generate button based on checkbox selection
 function updateGenerateButton() {
     const consistencyCheck = document.getElementById('consistency-report').checked;
-    const limitsCheck = document.getElementById('limits-report').checked;
     const paretoCheck = document.getElementById('failure-pareto').checked;
     
     const btn = document.getElementById('generate-plots-btn');
     const btnText = document.getElementById('btn-text');
     
-    const selectedCount = [consistencyCheck, limitsCheck, paretoCheck].filter(Boolean).length;
+    const selectedCount = [consistencyCheck, paretoCheck].filter(Boolean).length;
     
     if (selectedCount === 0) {
         btnText.textContent = 'Please select at least one report type';
@@ -610,8 +603,7 @@ function updateGenerateButton() {
         btn.disabled = true;
     } else {
         let reportTypes = [];
-        if (consistencyCheck) reportTypes.push('Consistency');
-        if (limitsCheck) reportTypes.push('Limits');
+        if (consistencyCheck) reportTypes.push('Consistency Plots');
         if (paretoCheck) reportTypes.push('Pareto');
         
         btnText.textContent = `Generate ${reportTypes.join(' + ')} Report${selectedCount > 1 ? 's' : ''}`;
@@ -649,7 +641,6 @@ function generatePlots() {
     
     // Get selected report types
     const consistencyCheck = document.getElementById('consistency-report').checked;
-    const limitsCheck = document.getElementById('limits-report').checked;
     const paretoCheck = document.getElementById('failure-pareto').checked;
     
     // Show loading state
@@ -662,10 +653,6 @@ function generatePlots() {
     
     if (consistencyCheck) {
         promises.push(generateConsistencyReport(selectedFile));
-    }
-    
-    if (limitsCheck) {
-        promises.push(generateLimitsReport(selectedFile));
     }
     
     if (paretoCheck) {

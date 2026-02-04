@@ -878,16 +878,40 @@ def analyze_failures():
             # Process each failed log - focus only on first error items
             all_failures = []
             first_error_counts = Counter()
+            processing_stats = {
+                'total_files_to_process': len(failed_files),
+                'successfully_parsed': 0,
+                'failed_to_parse': 0,
+                'no_first_error': 0,
+                'extraction_errors': 0
+            }
             
-            for failed_file in failed_files:
+            print(f"DEBUG: Starting to process {len(failed_files)} failed files")
+            
+            for i, failed_file in enumerate(failed_files):
+                print(f"DEBUG: Processing file {i+1}/{len(failed_files)}: {failed_file}")
+                
                 failure_data = extract_and_parse_failed_log(failed_file, temp_dir)
-                if failure_data:
-                    all_failures.append(failure_data)
+                
+                if not failure_data:
+                    processing_stats['extraction_errors'] += 1
+                    print(f"DEBUG: Failed to extract/parse {failed_file}")
+                    continue
                     
-                    # Count only the first error (which should be the root cause)
-                    if failure_data.get('first_error_item'):
-                        first_error_counts[failure_data['first_error_item']] += 1
-                        print(f"DEBUG: Counted first error: {failure_data['first_error_item']} for SN {failure_data.get('serial_number')}")
+                if not failure_data.get('first_error_item'):
+                    processing_stats['no_first_error'] += 1
+                    print(f"DEBUG: No first error found in {failed_file} - SN: {failure_data.get('serial_number')}")
+                    continue
+                
+                # Successfully processed
+                processing_stats['successfully_parsed'] += 1
+                all_failures.append(failure_data)
+                
+                # Count only the first error (which should be the root cause)
+                first_error_counts[failure_data['first_error_item']] += 1
+                print(f"DEBUG: SUCCESS - Counted first error: {failure_data['first_error_item']} for SN {failure_data.get('serial_number')}")
+            
+            print(f"DEBUG: Processing complete - Stats: {processing_stats}")
             
             if not all_failures:
                 return jsonify({'error': 'No valid failure data found in logs'}), 400
