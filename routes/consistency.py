@@ -648,26 +648,51 @@ def parse_parametric_csv_for_failures(csv_path):
             for row in reader:
                 test_result = row.get('test_result', '')
                 test_id = row.get('test_id', '')
+                test_group = row.get('test_group', '')
+                test_type = row.get('type', '')
                 
-                # Collect all failed tests
-                if test_result == 'FAIL':
+                # Extract summary information first
+                if test_id == 'FIRST_ERROR_CODE':
+                    failure_info['first_error_code'] = row.get('ret', '')
+                    continue
+                elif test_id == 'FIRST_ERROR_ITEM_TYPE':
+                    failure_info['first_error_item'] = row.get('ret', '')
+                    continue
+                elif test_id == 'OVERALL_TEST_RESULT':
+                    failure_info['overall_result'] = row.get('ret', '')
+                    continue
+                
+                # Skip summary rows and non-test entries
+                if test_group == 'Summary' or test_group == '':
+                    continue
+                    
+                # Skip infrastructure/setup steps that shouldn't be counted as test failures
+                infrastructure_steps = [
+                    'DELAY_1_SECONDS', 'DELAY_2_SECONDS', 'DELAY_3_SECONDS',
+                    'ACQUIRE_DMM_LOCK', 'RELEASE_DMM_LOCK',
+                    'CONNECT_', 'DISCONNECT_', 'SET_', 'RESET_', 'TURN_',
+                    'OVERALL_TEST_RESULT'
+                ]
+                
+                # Check if this is an infrastructure step
+                is_infrastructure = any(test_id.startswith(step) for step in infrastructure_steps)
+                if is_infrastructure:
+                    continue
+                
+                # Only count actual test failures (not infrastructure or summary)
+                if test_result == 'FAIL' and test_type in ['float', 'int', 'bool']:
+                    # This is a real test failure
                     failure_info['failed_tests'].append({
                         'test_id': test_id,
-                        'test_group': row.get('test_group', ''),
+                        'test_group': test_group,
                         'lo_limit': row.get('lo_limit', ''),
                         'hi_limit': row.get('hi_limit', ''),
                         'unit': row.get('unit', ''),
                         'ret': row.get('ret', ''),
                         'execution_time': row.get('execution_time', '')
                     })
-                
-                # Extract summary information
-                if test_id == 'FIRST_ERROR_CODE':
-                    failure_info['first_error_code'] = row.get('ret', '')
-                elif test_id == 'FIRST_ERROR_ITEM_TYPE':
-                    failure_info['first_error_item'] = row.get('ret', '')
-                elif test_id == 'OVERALL_TEST_RESULT':
-                    failure_info['overall_result'] = row.get('ret', '')
+                    
+                    print(f"DEBUG: Found real test failure: {test_id} in group {test_group}")
     
     except Exception as e:
         print(f"Error reading CSV {csv_path}: {e}")
