@@ -649,8 +649,9 @@ def get_full_test_list():
             session_data = pickle.load(f)
         
         all_tests = session_data['all_tests']
+        all_non_numeric_tests = session_data.get('all_non_numeric_tests', {})
         
-        # Generate complete test list
+        # Generate complete numeric test list
         test_list = []
         for test_id, test_data in all_tests.items():
             test_info = {
@@ -664,9 +665,24 @@ def get_full_test_list():
         # Sort by sample count (descending)
         test_list.sort(key=lambda x: x['sample_count'], reverse=True)
         
+        # Generate non-numeric test list
+        non_numeric_test_list = []
+        for test_id, test_data in all_non_numeric_tests.items():
+            test_info = {
+                'test_id': test_id,
+                'sample_count': len(test_data),
+                'test_type': test_data[0].get('test_type', '') if test_data else '',
+                'unit': test_data[0].get('unit', '') if test_data else ''
+            }
+            non_numeric_test_list.append(test_info)
+        
+        # Sort by sample count (descending)
+        non_numeric_test_list.sort(key=lambda x: x['sample_count'], reverse=True)
+        
         return jsonify({
             'success': True,
-            'test_list': test_list
+            'test_list': test_list,
+            'non_numeric_test_list': non_numeric_test_list
         })
         
     except Exception as e:
@@ -757,6 +773,80 @@ def upload_log_file():
     except Exception as e:
         print(f"DEBUG: Upload error: {str(e)}")
         return jsonify({'error': f'Upload error: {str(e)}'}), 500
+
+@consistency_bp.route('/move_test_to_non_numeric', methods=['POST'])
+def move_test_to_non_numeric():
+    """Move a test from numeric to non-numeric category."""
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        test_id = data.get('test_id')
+        
+        if not session_id or session_id not in session:
+            return jsonify({'error': 'Invalid or expired session'}), 400
+        
+        if not test_id:
+            return jsonify({'error': 'Test ID required'}), 400
+        
+        # Load session data from file
+        session_meta = session[session_id]
+        data_file = session_meta['data_file']
+        
+        if not os.path.exists(data_file):
+            return jsonify({'error': 'Session data file not found'}), 400
+        
+        with open(data_file, 'rb') as f:
+            session_data = pickle.load(f)
+        
+        all_tests = session_data['all_tests']
+        all_non_numeric_tests = session_data.get('all_non_numeric_tests', {})
+        
+        # Check if test exists in numeric tests
+        if test_id not in all_tests:
+            return jsonify({'error': f'Test {test_id} not found in numeric tests'}), 404
+        
+        # Move test data from numeric to non-numeric
+        test_data = all_tests[test_id]
+        
+        # Convert numeric test data to non-numeric format
+        non_numeric_data = []
+        for data_point in test_data:
+            non_numeric_data.append({
+                'test_id': test_id,
+                'test_type': 'MOVED_FROM_NUMERIC',
+                'ret_value': str(data_point['value']),
+                'unit': data_point.get('unit', ''),
+                'timestamp': data_point.get('timestamp', ''),
+                'test_result': data_point.get('test_result', ''),
+                'serial_number': data_point.get('serial_number', ''),
+                'source_file': data_point.get('source_file', '')
+            })
+        
+        # Add to non-numeric tests
+        all_non_numeric_tests[test_id] = non_numeric_data
+        
+        # Remove from numeric tests
+        del all_tests[test_id]
+        
+        # Update session data
+        session_data['all_tests'] = all_tests
+        session_data['all_non_numeric_tests'] = all_non_numeric_tests
+        
+        # Save updated data back to file
+        with open(data_file, 'wb') as f:
+            pickle.dump(session_data, f)
+        
+        print(f"DEBUG: Moved test '{test_id}' from numeric to non-numeric ({len(non_numeric_data)} data points)")
+        
+        return jsonify({
+            'success': True,
+            'message': f'Test "{test_id}" moved to non-numeric tests',
+            'moved_data_points': len(non_numeric_data)
+        })
+        
+    except Exception as e:
+        print(f"DEBUG: Move test error: {str(e)}")
+        return jsonify({'error': f'Move test error: {str(e)}'}), 500
 
 @consistency_bp.route('/cleanup_session', methods=['POST'])
 def cleanup_session():

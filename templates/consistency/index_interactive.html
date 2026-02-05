@@ -117,87 +117,111 @@
         </div>
 
         <!-- Phase 2: Interactive Plotting -->
-        <div id="phase2-panel" class="row" style="display: none;">
-            <div class="col-3">
-                <!-- Numeric Test Steps Panel -->
-                <div class="card">
-                    <div class="card-header">
-                        <h6><i class="fas fa-list"></i> Numeric Test Steps</h6>
-                        <small class="text-muted" id="test-count-display">0 tests found</small>
-                    </div>
-                    <div class="card-body p-2">
-                        <div class="test-steps-panel" id="test-steps-container" style="max-height: 350px;">
-                            <!-- Test step buttons will be populated here -->
+        <div id="phase2-panel" style="display: none;">
+            <div class="row">
+                <div class="col-md-3">
+                    <!-- Numeric Test Steps Panel -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h6><i class="fas fa-list"></i> Numeric Test Steps</h6>
+                            <small class="text-muted" id="test-count-display">0 tests found</small>
+                        </div>
+                        <div class="card-body p-2">
+                            <div class="test-steps-panel" id="test-steps-container" style="max-height: 350px; overflow-y: auto;">
+                                <!-- Test step buttons will be populated here -->
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Non-Numeric Tests Panel -->
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <h6><i class="fas fa-eye"></i> Non-Numeric Tests</h6>
-                        <small class="text-muted" id="non-numeric-count-display">Reference only</small>
-                    </div>
-                    <div class="card-body p-2">
-                        <div class="test-steps-panel" id="non-numeric-tests-container" style="max-height: 200px;">
-                            <div class="text-center text-muted">
-                                <small>Loading non-numeric tests...</small>
-                            </div>
+                    <!-- Non-Numeric Tests Panel -->
+                    <div class="card mt-3">
+                        <div class="card-header">
+                            <h6><i class="fas fa-eye"></i> Non-Numeric Tests</h6>
+                            <small class="text-muted" id="non-numeric-count-display">Reference only</small>
                         </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-9">
-                <!-- Plot Controls -->
-                <div class="control-panel">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h6><i class="fas fa-sliders-h"></i> Plot Controls</h6>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" id="showSpecLimits" checked>
-                                <label class="form-check-label" for="showSpecLimits">Spec Limits (USL/LSL)</label>
-                            </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" id="showControlLimits" checked>
-                                <label class="form-check-label" for="showControlLimits">Control Limits (±3σ)</label>
-                            </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" id="showOutliers" checked>
-                                <label class="form-check-label" for="showOutliers">Highlight Outliers</label>
-                            </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" id="cleanOutliers">
-                                <label class="form-check-label" for="cleanOutliers">Remove Outliers</label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="navigation-controls">
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="previousTest()">
-                                    <i class="fas fa-chevron-left"></i> Previous
-                                </button>
-                                <span class="test-counter" id="test-counter">Test 0 of 0</span>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="nextTest()">
-                                    Next <i class="fas fa-chevron-right"></i>
-                                </button>
+                        <div class="card-body p-2">
+                            <div class="test-steps-panel" id="non-numeric-tests-container" style="max-height: 200px; overflow-y: auto;">
+                                <div class="text-center text-muted">
+                                    <small>Loading non-numeric tests...</small>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Plot Container -->
-                <div class="plot-container" id="plot-container">
-                    <div class="d-flex justify-content-center align-items-center h-100 text-muted">
-                        <div class="text-center">
-                            <i class="fas fa-chart-line fa-3x mb-3"></i>
-                            <p>Select a test from the left panel to view its consistency plot</p>
+                <div class="col-md-9">
+                    <!-- Plot Controls -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <div class="row align-items-center">
+                                <div class="col-md-6">
+                                    <h6 class="mb-0"><i class="fas fa-sliders-h"></i> Plot Controls</h6>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="d-flex justify-content-end align-items-center">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary me-2" onclick="previousTest()">
+                                            <i class="fas fa-chevron-left"></i> Previous
+                                        </button>
+                                        <span class="test-counter me-2" id="test-counter">Test 0 of 0</span>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="nextTest()">
+                                            Next <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="showSpecLimits" checked>
+                                        <label class="form-check-label" for="showSpecLimits">Spec Limits (USL/LSL)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="showControlLimits" checked>
+                                        <label class="form-check-label" for="showControlLimits">Control Limits (±3σ)</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="showOutliers" checked>
+                                        <label class="form-check-label" for="showOutliers">Highlight Outliers</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="cleanOutliers">
+                                        <label class="form-check-label" for="cleanOutliers">Remove Outliers</label>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Statistics Panel -->
-                <div class="stats-panel mt-3" id="stats-panel" style="display: none;">
-                    <div id="stats-content"></div>
+                    <!-- Plot Container -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h6><i class="fas fa-chart-line"></i> Consistency Plot</h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="plot-container" style="height: 500px;">
+                                <div class="d-flex justify-content-center align-items-center h-100 text-muted">
+                                    <div class="text-center">
+                                        <i class="fas fa-chart-line fa-3x mb-3"></i>
+                                        <p>Select a test from the left panel to view its consistency plot</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Statistics Panel -->
+                    <div class="card mt-3" id="stats-panel" style="display: none;">
+                        <div class="card-header">
+                            <h6><i class="fas fa-calculator"></i> Test Statistics</h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="stats-content"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -372,12 +396,18 @@
                     // Re-populate test steps with full list
                     populateTestSteps();
                     
+                    // Populate non-numeric tests
+                    if (result.non_numeric_test_list) {
+                        populateNonNumericTests(result.non_numeric_test_list);
+                    }
+                    
                     // Update status to show completion
                     document.getElementById('processing-status').innerHTML = `
                         <div class="alert alert-success">
                             <h6><i class="fas fa-check-circle"></i> Data Processing Complete!</h6>
                             <ul class="mb-0">
-                                <li><strong>${testList.length}</strong> unique tests found</li>
+                                <li><strong>${testList.length}</strong> unique numeric tests found</li>
+                                <li><strong>${result.non_numeric_test_list ? result.non_numeric_test_list.length : 0}</strong> non-numeric tests found</li>
                                 <li><strong>36,263</strong> total data points</li>
                                 <li><strong>797</strong> CSV files processed</li>
                             </ul>
@@ -389,6 +419,36 @@
             } catch (error) {
                 console.error('Error loading full test list:', error);
             }
+        }
+
+        // Populate non-numeric tests panel
+        function populateNonNumericTests(nonNumericTests) {
+            const container = document.getElementById('non-numeric-tests-container');
+            const countDisplay = document.getElementById('non-numeric-count-display');
+            
+            countDisplay.textContent = `${nonNumericTests.length} non-numeric tests`;
+            
+            if (nonNumericTests.length === 0) {
+                container.innerHTML = '<div class="text-center text-muted"><small>No non-numeric tests found</small></div>';
+                return;
+            }
+            
+            let html = '';
+            nonNumericTests.forEach((test, index) => {
+                const typeText = test.test_type ? ` (${test.test_type})` : '';
+                const unitText = test.unit ? ` [${test.unit}]` : '';
+                
+                html += `
+                    <div class="btn btn-outline-secondary test-step-btn w-100 mb-1" style="cursor: default;">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-truncate small">${test.test_id}${typeText}${unitText}</span>
+                            <span class="badge bg-info">${test.sample_count}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
         }
 
         // Populate test steps panel
