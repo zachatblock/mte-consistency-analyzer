@@ -1208,9 +1208,11 @@
 
                 if (result.success) {
                     currentPlotData = result.plot_data;
-                    renderPlot(currentPlotData);
+                    
+                    // Force update of the upper plot with new control limits
+                    renderPlotWithEIFFilter(currentPlotData);
                     renderHistogram(currentPlotData);
-                    updateStatsPanel(currentPlotData);
+                    updateStatsPanelWithEIFFilter(currentPlotData);
                 } else {
                     alert(`Error updating control limits: ${result.error}`);
                 }

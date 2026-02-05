@@ -244,28 +244,57 @@ def convert_numpy_to_python_types(obj):
         return obj
 
 def generate_histogram_bins(values, num_bins=20):
-    """Generate histogram bins with smart binning for wide dynamic ranges."""
+    """Generate histogram bins with smart binning standardized around orders of magnitude."""
     values = np.array(values)
     values = values[np.isfinite(values)]  # Remove any infinite or NaN values
     
     if len(values) == 0:
         return [], [], {}
     
-    # Check if we need logarithmic binning (wide dynamic range)
     min_val, max_val = np.min(values), np.max(values)
+    print(f"DEBUG: Histogram data range: {min_val:.2f} to {max_val:.2f} ({len(values)} samples)")
     
-    # Use log binning if range spans more than 2 orders of magnitude and all values are positive
+    # Check if we need logarithmic binning (wide dynamic range)
     use_log_bins = (max_val / min_val > 100) and (min_val > 0)
+    print(f"DEBUG: Using {'logarithmic' if use_log_bins else 'linear'} binning (ratio: {max_val/min_val:.1f})")
     
     if use_log_bins:
-        # Logarithmic binning
+        # Logarithmic binning with standardized edges
         log_min = np.log10(min_val)
         log_max = np.log10(max_val)
-        log_edges = np.logspace(log_min, log_max, num_bins + 1)
-        bin_edges = log_edges
+        
+        # Round to nice order-of-magnitude boundaries
+        log_min_rounded = np.floor(log_min * 2) / 2  # Round to nearest 0.5 decade
+        log_max_rounded = np.ceil(log_max * 2) / 2
+        
+        # Create standardized log edges
+        log_edges = np.linspace(log_min_rounded, log_max_rounded, num_bins + 1)
+        bin_edges = 10 ** log_edges
     else:
-        # Linear binning
-        bin_edges = np.linspace(min_val, max_val, num_bins + 1)
+        # Linear binning with nice round numbers
+        data_range = max_val - min_val
+        
+        # Determine appropriate step size based on order of magnitude
+        if data_range > 0:
+            order_of_magnitude = 10 ** np.floor(np.log10(data_range))
+            nice_step = order_of_magnitude / 10  # Start with 1/10th of the order of magnitude
+            
+            # Adjust step size to get reasonable number of bins
+            while (data_range / nice_step) > num_bins * 1.5:
+                nice_step *= 2
+            while (data_range / nice_step) < num_bins * 0.5:
+                nice_step /= 2
+            
+            # Round min/max to nice boundaries
+            nice_min = np.floor(min_val / nice_step) * nice_step
+            nice_max = np.ceil(max_val / nice_step) * nice_step
+            
+            # Generate nice bin edges
+            n_steps = int(np.ceil((nice_max - nice_min) / nice_step)) + 1
+            bin_edges = np.linspace(nice_min, nice_min + (n_steps - 1) * nice_step, n_steps)
+        else:
+            # Fallback for zero range
+            bin_edges = np.linspace(min_val - 0.5, max_val + 0.5, num_bins + 1)
     
     # Calculate histogram
     counts, _ = np.histogram(values, bins=bin_edges)
@@ -274,17 +303,33 @@ def generate_histogram_bins(values, num_bins=20):
     bin_centers = []
     bin_ranges = []
     for i in range(len(bin_edges) - 1):
-        center = (bin_edges[i] + bin_edges[i + 1]) / 2
+        if use_log_bins:
+            # Geometric mean for log scale
+            center = np.sqrt(bin_edges[i] * bin_edges[i + 1])
+        else:
+            # Arithmetic mean for linear scale
+            center = (bin_edges[i] + bin_edges[i + 1]) / 2
         bin_centers.append(center)
         bin_ranges.append((bin_edges[i], bin_edges[i + 1]))
     
     # Find dominant bin (>51% of samples)
     total_samples = len(values)
     dominant_bin = None
+    max_count = 0
+    max_bin = 0
     for i, count in enumerate(counts):
+        if count > max_count:
+            max_count = count
+            max_bin = i
         if count / total_samples > 0.51:
             dominant_bin = i
             break
+    
+    print(f"DEBUG: Histogram bins - Max bin: {max_bin} ({max_count} samples, {100*max_count/total_samples:.1f}%)")
+    if dominant_bin is not None:
+        print(f"DEBUG: Dominant bin found: {dominant_bin} ({counts[dominant_bin]} samples, {100*counts[dominant_bin]/total_samples:.1f}%)")
+    else:
+        print(f"DEBUG: No dominant bin (>51%), will use max bin {max_bin}")
     
     histogram_data = {
         'bin_edges': bin_edges.tolist(),
@@ -362,15 +407,30 @@ def find_stable_data_indices(values, histogram_data, selected_bin=None):
     # Use dominant bin if no specific bin selected
     if selected_bin is None:
         selected_bin = histogram_data.get('dominant_bin')
+        print(f"DEBUG: No bin selected, using dominant bin: {selected_bin}")
     
-    if selected_bin is None or selected_bin >= len(histogram_data['bin_ranges']):
+    # If no dominant bin found, find the bin with the most samples
+    if selected_bin is None:
+        if len(histogram_data['counts']) > 0:
+            selected_bin = np.argmax(histogram_data['counts'])
+            print(f"DEBUG: No dominant bin, using max bin: {selected_bin}")
+        else:
+            print("DEBUG: No histogram data available")
+            return []
+    
+    if selected_bin >= len(histogram_data['bin_ranges']):
+        print(f"DEBUG: Selected bin {selected_bin} out of range (max: {len(histogram_data['bin_ranges'])-1})")
         return []
     
     # Get the range for the selected bin
     bin_min, bin_max = histogram_data['bin_ranges'][selected_bin]
+    print(f"DEBUG: Using bin {selected_bin} range: {bin_min:.2f} to {bin_max:.2f}")
     
     # Find indices of values that fall within this bin
     stable_indices = np.where((values >= bin_min) & (values < bin_max))[0]
+    stable_values = values[stable_indices]
+    
+    print(f"DEBUG: Found {len(stable_indices)} stable samples (range: {np.min(stable_values):.2f} to {np.max(stable_values):.2f})")
     
     return stable_indices.tolist()
 
@@ -416,6 +476,7 @@ def generate_plot_data(test_id, test_data, plot_options=None):
     
     # Calculate I-MR control limits from stable data only
     imr_results = calculate_imr_control_limits_from_stable_data(values, stable_indices)
+    print(f"DEBUG: Control limits calculated - Mean: {imr_results['mean']:.2f}, UCL: {imr_results['ucl']:.2f}, LCL: {imr_results['lcl']:.2f} (from {imr_results['stable_data_count']} stable samples)")
     
     # Identify out-of-control points using stable-based I-MR limits
     out_of_control = (values > imr_results['ucl']) | (values < imr_results['lcl'])
