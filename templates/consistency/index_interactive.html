@@ -172,7 +172,7 @@
                         </div>
                         <div class="card-body">
                             <div class="row">
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" id="showSpecLimits" checked>
                                         <label class="form-check-label" for="showSpecLimits">Spec Limits (USL/LSL)</label>
@@ -182,7 +182,7 @@
                                         <label class="form-check-label" for="showControlLimits">Control Limits (±3σ)</label>
                                     </div>
                                 </div>
-                                <div class="col-md-6">
+                                <div class="col-md-4">
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" id="showOutliers" checked>
                                         <label class="form-check-label" for="showOutliers">Highlight Outliers</label>
@@ -190,6 +190,14 @@
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" id="cleanOutliers">
                                         <label class="form-check-label" for="cleanOutliers">Remove Outliers</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div id="eif-filter-container">
+                                        <strong class="small text-muted">EIF Filters:</strong>
+                                        <div id="eif-checkboxes">
+                                            <!-- EIF checkboxes will be populated dynamically -->
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -260,6 +268,7 @@
         let testList = [];
         let currentTestIndex = -1;
         let currentPlotData = null;
+        let selectedEIFs = new Set(); // Track which EIFs are selected for filtering
 
         // Show/hide loading overlay
         function showLoading(message, details = '') {
@@ -539,6 +548,7 @@
 
                 if (result.success) {
                     currentPlotData = result.plot_data;
+                    populateEIFCheckboxes(currentPlotData);
                     renderPlot(currentPlotData);
                     updateStatsPanel(currentPlotData);
                 } else {
@@ -744,51 +754,375 @@
             Plotly.newPlot(container, traces, layout, { responsive: true });
         }
 
+        // Populate EIF checkboxes dynamically
+        function populateEIFCheckboxes(plotData) {
+            const container = document.getElementById('eif-checkboxes');
+            
+            if (!plotData.eif_categories) {
+                container.innerHTML = '<small class="text-muted">No EIF data available</small>';
+                return;
+            }
+            
+            // Initialize selectedEIFs with all EIFs if empty
+            if (selectedEIFs.size === 0) {
+                Object.keys(plotData.eif_categories).forEach(eif => {
+                    selectedEIFs.add(eif);
+                });
+            }
+            
+            let html = '';
+            Object.entries(plotData.eif_categories).forEach(([eif, indices]) => {
+                const eifLabel = eif === 'null' ? 'Unknown' : `EIF ${eif}`;
+                const count = indices.length;
+                const isChecked = selectedEIFs.has(eif) ? 'checked' : '';
+                
+                html += `
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input eif-checkbox" type="checkbox" 
+                               id="eif-${eif}" value="${eif}" ${isChecked}
+                               onchange="onEIFFilterChange()">
+                        <label class="form-check-label small" for="eif-${eif}">
+                            ${eifLabel} (${count})
+                        </label>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        // Handle EIF filter changes
+        function onEIFFilterChange() {
+            // Update selectedEIFs based on checkbox states
+            selectedEIFs.clear();
+            document.querySelectorAll('.eif-checkbox:checked').forEach(checkbox => {
+                selectedEIFs.add(checkbox.value);
+            });
+            
+            // Re-render plot with filtered data
+            if (currentPlotData) {
+                renderPlotWithEIFFilter(currentPlotData);
+                updateStatsPanelWithEIFFilter(currentPlotData);
+            }
+        }
+
+        // Filter plot data based on selected EIFs and render
+        function renderPlotWithEIFFilter(plotData) {
+            const container = document.getElementById('plot-container');
+            
+            // Filter data based on selected EIFs
+            const filteredData = filterDataByEIF(plotData);
+            
+            // Prepare data series
+            const traces = [];
+            
+            // Define colors for different EIF categories
+            const eifColors = {
+                '0': 'red',
+                '1': 'blue', 
+                '2': 'green',
+                '3': 'purple',
+                '4': 'orange',
+                '5': 'brown',
+                'null': 'gray'
+            };
+            
+            // Plot data by EIF categories (only selected ones)
+            if (filteredData.eif_categories) {
+                Object.entries(filteredData.eif_categories).forEach(([eif, indices]) => {
+                    if (!selectedEIFs.has(eif)) return; // Skip unselected EIFs
+                    
+                    const color = eifColors[eif] || 'gray';
+                    const eifLabel = eif === 'null' ? 'Unknown EIF' : `EIF ${eif}`;
+                    
+                    // PASS points for this EIF (circles)
+                    const eif_pass = indices.filter(i => filteredData.pass_indices.includes(i) && !filteredData.ooc_indices.includes(i));
+                    if (eif_pass.length > 0) {
+                        traces.push({
+                            x: eif_pass,
+                            y: eif_pass.map(i => filteredData.values[i]),
+                            mode: 'markers',
+                            type: 'scatter',
+                            name: `${eifLabel} PASS`,
+                            marker: { color: color, size: 6, opacity: 0.7 }
+                        });
+                    }
+                    
+                    // FAIL points for this EIF (triangles)
+                    const eif_fail = indices.filter(i => filteredData.fail_indices.includes(i) && !filteredData.ooc_indices.includes(i));
+                    if (eif_fail.length > 0) {
+                        traces.push({
+                            x: eif_fail,
+                            y: eif_fail.map(i => filteredData.values[i]),
+                            mode: 'markers',
+                            type: 'scatter',
+                            name: `${eifLabel} FAIL`,
+                            marker: { color: color, size: 8, symbol: 'triangle-up', opacity: 0.7 }
+                        });
+                    }
+                });
+            }
+            
+            // Out of Control points (larger markers)
+            if (filteredData.ooc_indices.length > 0) {
+                traces.push({
+                    x: filteredData.ooc_indices,
+                    y: filteredData.ooc_indices.map(i => filteredData.values[i]),
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: 'Out of Control',
+                    marker: { color: 'orange', size: 12, symbol: 'x', line: { width: 2 } }
+                });
+            }
+            
+            // Outliers (purple circles)
+            if (filteredData.plot_options.show_outliers && filteredData.outlier_indices.length > 0) {
+                traces.push({
+                    x: filteredData.outlier_indices,
+                    y: filteredData.outlier_indices.map(i => filteredData.values[i]),
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: `Outliers (${filteredData.outlier_indices.length})`,
+                    marker: { color: 'purple', size: 10, symbol: 'circle-open', line: { width: 3 } }
+                });
+            }
+            
+            // Connecting line (only for filtered data)
+            if (filteredData.x_values.length > 1) {
+                traces.push({
+                    x: filteredData.x_values,
+                    y: filteredData.values,
+                    mode: 'lines',
+                    type: 'scatter',
+                    name: 'Trend',
+                    line: { color: 'gray', width: 1, dash: 'dot' },
+                    opacity: 0.5,
+                    showlegend: false
+                });
+            }
+            
+            // Layout
+            const layout = {
+                title: {
+                    text: `${filteredData.test_id}<br><sub>n=${filteredData.n_samples}, μ=${filteredData.mean.toFixed(2)}, σ=${filteredData.std.toFixed(2)}</sub>`,
+                    font: { size: 16 }
+                },
+                xaxis: { title: 'Sample Number' },
+                yaxis: { title: `Measured Value${filteredData.unit ? ` (${filteredData.unit})` : ''}` },
+                hovermode: 'closest',
+                showlegend: true,
+                legend: { orientation: 'h', y: -0.2 },
+                margin: { t: 80, b: 100, l: 80, r: 50 },
+                shapes: []
+            };
+            
+            // Add horizontal lines for limits
+            if (filteredData.plot_options.show_control_limits) {
+                // Mean line (green)
+                layout.shapes.push({
+                    type: 'line',
+                    x0: 0, x1: Math.max(...filteredData.x_values),
+                    y0: filteredData.mean, y1: filteredData.mean,
+                    line: { color: 'green', width: 2 }
+                });
+                
+                // UCL/LCL (orange dashed)
+                layout.shapes.push({
+                    type: 'line',
+                    x0: 0, x1: Math.max(...filteredData.x_values),
+                    y0: filteredData.ucl, y1: filteredData.ucl,
+                    line: { color: 'orange', width: 2, dash: 'dash' }
+                });
+                
+                layout.shapes.push({
+                    type: 'line',
+                    x0: 0, x1: Math.max(...filteredData.x_values),
+                    y0: filteredData.lcl, y1: filteredData.lcl,
+                    line: { color: 'orange', width: 2, dash: 'dash' }
+                });
+            }
+            
+            if (filteredData.plot_options.show_spec_limits && filteredData.has_limits) {
+                // USL (red solid)
+                if (filteredData.usl !== null) {
+                    layout.shapes.push({
+                        type: 'line',
+                        x0: 0, x1: Math.max(...filteredData.x_values),
+                        y0: filteredData.usl, y1: filteredData.usl,
+                        line: { color: 'red', width: 2 }
+                    });
+                }
+                
+                // LSL (red solid)
+                if (filteredData.lsl !== null) {
+                    layout.shapes.push({
+                        type: 'line',
+                        x0: 0, x1: Math.max(...filteredData.x_values),
+                        y0: filteredData.lsl, y1: filteredData.lsl,
+                        line: { color: 'red', width: 2 }
+                    });
+                }
+            }
+            
+            // Render plot
+            Plotly.newPlot(container, traces, layout, { responsive: true });
+        }
+
+        // Filter data by selected EIFs
+        function filterDataByEIF(plotData) {
+            if (selectedEIFs.size === 0) return plotData; // No filtering if no EIFs selected
+            
+            // Get indices of selected EIFs
+            let filteredIndices = [];
+            Object.entries(plotData.eif_categories).forEach(([eif, indices]) => {
+                if (selectedEIFs.has(eif)) {
+                    filteredIndices = filteredIndices.concat(indices);
+                }
+            });
+            
+            // Sort indices to maintain order
+            filteredIndices.sort((a, b) => a - b);
+            
+            if (filteredIndices.length === 0) return plotData; // No data to filter
+            
+            // Create filtered data
+            const filteredData = {
+                ...plotData,
+                x_values: filteredIndices.map((_, i) => i), // Reindex for continuous x-axis
+                values: filteredIndices.map(i => plotData.values[i]),
+                test_results: filteredIndices.map(i => plotData.test_results[i]),
+                serial_numbers: filteredIndices.map(i => plotData.serial_numbers[i]),
+                n_samples: filteredIndices.length
+            };
+            
+            // Recalculate statistics for filtered data
+            const values = filteredData.values;
+            filteredData.mean = values.reduce((a, b) => a + b, 0) / values.length;
+            const variance = values.reduce((a, b) => a + Math.pow(b - filteredData.mean, 2), 0) / (values.length - 1);
+            filteredData.std = Math.sqrt(variance);
+            filteredData.ucl = filteredData.mean + 3 * filteredData.std;
+            filteredData.lcl = filteredData.mean - 3 * filteredData.std;
+            
+            // Recalculate indices for filtered data
+            filteredData.pass_indices = [];
+            filteredData.fail_indices = [];
+            filteredData.ooc_indices = [];
+            
+            filteredData.test_results.forEach((result, i) => {
+                if (result === 'PASS') filteredData.pass_indices.push(i);
+                if (result === 'FAIL') filteredData.fail_indices.push(i);
+                if (values[i] > filteredData.ucl || values[i] < filteredData.lcl) {
+                    filteredData.ooc_indices.push(i);
+                }
+            });
+            
+            // Update counts
+            filteredData.n_pass = filteredData.pass_indices.length;
+            filteredData.n_fail = filteredData.fail_indices.length;
+            filteredData.n_ooc = filteredData.ooc_indices.length;
+            
+            // Update EIF categories for filtered data
+            filteredData.eif_categories = {};
+            filteredData.eif_counts = {};
+            
+            Object.entries(plotData.eif_categories).forEach(([eif, originalIndices]) => {
+                if (selectedEIFs.has(eif)) {
+                    // Map original indices to new filtered indices
+                    const newIndices = [];
+                    originalIndices.forEach(originalIndex => {
+                        const newIndex = filteredIndices.indexOf(originalIndex);
+                        if (newIndex !== -1) {
+                            newIndices.push(newIndex);
+                        }
+                    });
+                    filteredData.eif_categories[eif] = newIndices;
+                    filteredData.eif_counts[eif] = newIndices.length;
+                }
+            });
+            
+            return filteredData;
+        }
+
+        // Render plot using Plotly (original function for initial load)
+        function renderPlot(plotData) {
+            renderPlotWithEIFFilter(plotData);
+        }
+
         // Update statistics panel
         function updateStatsPanel(plotData) {
+            updateStatsPanelWithEIFFilter(plotData);
+        }
+
+        // Update statistics panel with EIF filtering
+        function updateStatsPanelWithEIFFilter(plotData) {
             const panel = document.getElementById('stats-panel');
             const content = document.getElementById('stats-content');
             
-            // Build EIF counts display
+            // Filter data if EIF filtering is active
+            const filteredData = filterDataByEIF(plotData);
+            
+            // Build EIF counts display (only for selected EIFs)
             let eifCountsHtml = '';
-            if (plotData.eif_counts) {
-                Object.entries(plotData.eif_counts).forEach(([eif, count]) => {
-                    const eifLabel = eif === 'null' ? 'Unknown EIF' : `EIF ${eif}`;
-                    eifCountsHtml += `${eifLabel}: ${count}<br>`;
+            if (filteredData.eif_counts) {
+                Object.entries(filteredData.eif_counts).forEach(([eif, count]) => {
+                    if (selectedEIFs.has(eif)) {
+                        const eifLabel = eif === 'null' ? 'Unknown EIF' : `EIF ${eif}`;
+                        eifCountsHtml += `${eifLabel}: ${count}<br>`;
+                    }
                 });
+            }
+            
+            // Build limits display
+            let limitsHtml = '';
+            if (filteredData.has_limits) {
+                limitsHtml += `<strong>Specification Limits:</strong><br>`;
+                if (filteredData.usl !== null) {
+                    limitsHtml += `USL: ${filteredData.usl.toFixed(3)}<br>`;
+                } else {
+                    limitsHtml += `USL: (No limit found)<br>`;
+                }
+                if (filteredData.lsl !== null) {
+                    limitsHtml += `LSL: ${filteredData.lsl.toFixed(3)}<br>`;
+                } else {
+                    limitsHtml += `LSL: (No limit found)<br>`;
+                }
+            } else {
+                limitsHtml = `<strong>Specification Limits:</strong><br>(No limits found)<br>`;
             }
             
             let html = `
                 <div class="row">
                     <div class="col-md-6">
                         <strong>Sample Statistics:</strong><br>
-                        Total Samples: ${plotData.n_samples}<br>
+                        Total Samples: ${filteredData.n_samples}<br>
                         ${eifCountsHtml}
-                        PASS: ${plotData.n_pass} (${(100 * plotData.n_pass / plotData.n_samples).toFixed(1)}%)<br>
-                        FAIL: ${plotData.n_fail} (${(100 * plotData.n_fail / plotData.n_samples).toFixed(1)}%)<br>
+                        PASS: ${filteredData.n_pass} (${(100 * filteredData.n_pass / filteredData.n_samples).toFixed(1)}%)<br>
+                        FAIL: ${filteredData.n_fail} (${(100 * filteredData.n_fail / filteredData.n_samples).toFixed(1)}%)<br>
                     </div>
                     <div class="col-md-6">
                         <strong>Statistical Measures:</strong><br>
-                        Mean: ${plotData.mean.toFixed(3)}<br>
-                        Std Dev: ${plotData.std.toFixed(3)}<br>
-                        Min: ${Math.min(...plotData.values).toFixed(3)}<br>
-                        Max: ${Math.max(...plotData.values).toFixed(3)}<br>
-                        Out of Control: ${plotData.n_ooc}<br>
+                        Mean: ${filteredData.mean.toFixed(3)}<br>
+                        Std Dev: ${filteredData.std.toFixed(3)}<br>
+                        Min: ${Math.min(...filteredData.values).toFixed(3)}<br>
+                        Max: ${Math.max(...filteredData.values).toFixed(3)}<br>
+                        Out of Control: ${filteredData.n_ooc}<br>
+                        <br>
+                        ${limitsHtml}
             `;
             
-            if (plotData.has_limits) {
+            if (filteredData.has_limits) {
                 html += `
                         <strong>Limit Violations:</strong><br>
-                        USL Violations: ${plotData.usl_violations}<br>
-                        LSL Violations: ${plotData.lsl_violations}<br>
+                        USL Violations: ${filteredData.usl_violations || 0}<br>
+                        LSL Violations: ${filteredData.lsl_violations || 0}<br>
                 `;
             }
             
-            if (plotData.outlier_info && plotData.outlier_info.has_outliers) {
+            if (filteredData.outlier_info && filteredData.outlier_info.has_outliers) {
                 html += `
                         <strong>Outlier Analysis:</strong><br>
-                        Outliers Detected: ${plotData.outlier_info.consensus_count} (${plotData.outlier_info.outlier_percentage.toFixed(1)}%)<br>
-                        Methods: ${plotData.outlier_info.methods_used.join(', ')}<br>
+                        Outliers Detected: ${filteredData.outlier_info.consensus_count} (${filteredData.outlier_info.outlier_percentage.toFixed(1)}%)<br>
+                        Methods: ${filteredData.outlier_info.methods_used.join(', ')}<br>
                 `;
             }
             
