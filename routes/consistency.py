@@ -243,159 +243,52 @@ def convert_numpy_to_python_types(obj):
     else:
         return obj
 
-def detect_outliers_multiple_methods(values, test_id=""):
-    """Detect outliers using multiple methods and return comprehensive outlier information."""
+def calculate_imr_control_limits(values):
+    """Calculate I-MR (Individuals-Moving Range) control chart limits."""
     values = np.array(values)
     n = len(values)
     
-    if n < 10:  # Need reasonable sample size for outlier detection
+    if n < 2:
+        # Not enough data for I-MR chart
+        mean_val = np.mean(values) if n > 0 else 0
         return {
-            'has_outliers': False,
-            'outlier_indices': [],
-            'outlier_values': [],
-            'methods_used': [],
-            'outlier_summary': f"Insufficient samples ({n}) for outlier detection"
+            'mean': float(mean_val),
+            'ucl': float(mean_val),
+            'lcl': float(mean_val),
+            'sigma_hat': 0.0,
+            'mr_bar': 0.0,
+            'moving_ranges': [],
+            'method': 'insufficient_data'
         }
     
-    outlier_methods = {}
-    
-    # Method 1: IQR (Interquartile Range) - Classic and robust
-    q1 = np.percentile(values, 25)
-    q3 = np.percentile(values, 75)
-    iqr = q3 - q1
-    
-    if iqr > 0:  # Avoid division by zero
-        iqr_lower = q1 - 1.5 * iqr
-        iqr_upper = q3 + 1.5 * iqr
-        iqr_outliers = (values < iqr_lower) | (values > iqr_upper)
-        outlier_methods['IQR'] = {
-            'outliers': iqr_outliers,
-            'count': np.sum(iqr_outliers),
-            'bounds': (iqr_lower, iqr_upper),
-            'description': f"IQR method: Q1={q1:.2f}, Q3={q3:.2f}, bounds=[{iqr_lower:.2f}, {iqr_upper:.2f}]"
-        }
-    
-    # Method 2: Modified Z-Score - Good for detecting extreme outliers
-    median = np.median(values)
-    mad = np.median(np.abs(values - median))  # Median Absolute Deviation
-    
-    if mad > 0:  # Avoid division by zero
-        modified_z_scores = 0.6745 * (values - median) / mad
-        z_threshold = 3.5  # Common threshold for modified z-score
-        z_outliers = np.abs(modified_z_scores) > z_threshold
-        outlier_methods['Modified_Z'] = {
-            'outliers': z_outliers,
-            'count': np.sum(z_outliers),
-            'threshold': z_threshold,
-            'description': f"Modified Z-Score: median={median:.2f}, MAD={mad:.2f}, threshold={z_threshold}"
-        }
-    
-    # Method 3: Isolation Forest - Machine learning approach
-    try:
-        iso_forest = IsolationForest(contamination=0.1, random_state=42)  # Expect 10% outliers max
-        outlier_predictions = iso_forest.fit_predict(values.reshape(-1, 1))
-        iso_outliers = outlier_predictions == -1
-        outlier_methods['Isolation_Forest'] = {
-            'outliers': iso_outliers,
-            'count': np.sum(iso_outliers),
-            'contamination': 0.1,
-            'description': f"Isolation Forest: contamination=0.1, detected {np.sum(iso_outliers)} outliers"
-        }
-    except Exception as e:
-        print(f"DEBUG: Isolation Forest failed for {test_id}: {e}")
-    
-    # Method 4: Statistical outliers (beyond 3 standard deviations)
+    # 1. Calculate center line (mean of individual measurements)
     mean_val = np.mean(values)
-    std_val = np.std(values)
-    if std_val > 0:
-        stat_outliers = np.abs(values - mean_val) > 3 * std_val
-        outlier_methods['Statistical_3Sigma'] = {
-            'outliers': stat_outliers,
-            'count': np.sum(stat_outliers),
-            'bounds': (mean_val - 3*std_val, mean_val + 3*std_val),
-            'description': f"3-Sigma: mean={mean_val:.2f}, std={std_val:.2f}, bounds=[{mean_val-3*std_val:.2f}, {mean_val+3*std_val:.2f}]"
-        }
     
-    # Combine methods using voting (at least 2 methods must agree)
-    if len(outlier_methods) >= 2:
-        all_outlier_arrays = [method['outliers'] for method in outlier_methods.values()]
-        outlier_votes = np.sum(all_outlier_arrays, axis=0)
-        
-        # Require at least 2 methods to agree for an outlier
-        consensus_outliers = outlier_votes >= 2
-        consensus_count = np.sum(consensus_outliers)
-        
-        # For resistance tests specifically, be more aggressive with outlier detection
-        if 'res' in test_id.lower() or 'resistance' in test_id.lower():
-            # For resistance tests, look for values that are >100x the median (likely open circuits)
-            resistance_threshold = 100 * median if median > 0 else 1e6
-            extreme_outliers = values > resistance_threshold
-            consensus_outliers = consensus_outliers | extreme_outliers
-            consensus_count = np.sum(consensus_outliers)
-            
-            if np.sum(extreme_outliers) > 0:
-                outlier_methods['Resistance_Extreme'] = {
-                    'outliers': extreme_outliers,
-                    'count': np.sum(extreme_outliers),
-                    'threshold': resistance_threshold,
-                    'description': f"Resistance extreme: >100x median ({resistance_threshold:.0f}Ω)"
-                }
-        
-    else:
-        consensus_outliers = np.zeros(n, dtype=bool)
-        consensus_count = 0
+    # 2. Calculate moving ranges MR_i = |X_i - X_{i-1}|
+    moving_ranges = []
+    for i in range(1, n):
+        mr = abs(values[i] - values[i-1])
+        moving_ranges.append(mr)
     
-    # Calculate impact on statistics
-    original_mean = np.mean(values)
-    original_std = np.std(values)
+    # 3. Calculate average moving range
+    mr_bar = np.mean(moving_ranges) if moving_ranges else 0
     
-    if consensus_count > 0:
-        clean_values = values[~consensus_outliers]
-        if len(clean_values) > 3:  # Need minimum samples for statistics
-            clean_mean = np.mean(clean_values)
-            clean_std = np.std(clean_values)
-            
-            mean_change_pct = abs(clean_mean - original_mean) / abs(original_mean) * 100 if original_mean != 0 else 0
-            std_change_pct = abs(clean_std - original_std) / abs(original_std) * 100 if original_std != 0 else 0
-            
-            impact_significant = mean_change_pct > 5 or std_change_pct > 10  # 5% mean change or 10% std change
-        else:
-            clean_mean = original_mean
-            clean_std = original_std
-            mean_change_pct = 0
-            std_change_pct = 0
-            impact_significant = False
-    else:
-        clean_mean = original_mean
-        clean_std = original_std
-        mean_change_pct = 0
-        std_change_pct = 0
-        impact_significant = False
+    # 4. Estimate process sigma using d2 = 1.128 for moving range of 2
+    d2 = 1.128
+    sigma_hat = mr_bar / d2 if mr_bar > 0 else 0
     
-    # Create summary
-    method_names = list(outlier_methods.keys())
-    outlier_summary = f"Methods: {', '.join(method_names)}. "
-    outlier_summary += f"Consensus: {consensus_count}/{n} outliers ({consensus_count/n*100:.1f}%). "
-    outlier_summary += f"Mean change: {mean_change_pct:.1f}%, Std change: {std_change_pct:.1f}%"
+    # 5. Calculate I-MR control limits
+    ucl = mean_val + 3 * sigma_hat
+    lcl = mean_val - 3 * sigma_hat
     
     return convert_numpy_to_python_types({
-        'has_outliers': bool(consensus_count > 0),
-        'outlier_indices': np.where(consensus_outliers)[0].tolist(),
-        'outlier_values': values[consensus_outliers].tolist(),
-        'clean_indices': np.where(~consensus_outliers)[0].tolist(),
-        'clean_values': values[~consensus_outliers].tolist(),
-        'methods_used': method_names,
-        'consensus_count': int(consensus_count),
-        'total_samples': int(n),
-        'outlier_percentage': float(consensus_count/n*100),
-        'original_mean': float(original_mean),
-        'original_std': float(original_std),
-        'clean_mean': float(clean_mean),
-        'clean_std': float(clean_std),
-        'mean_change_percent': float(mean_change_pct),
-        'std_change_percent': float(std_change_pct),
-        'impact_significant': bool(impact_significant),
-        'outlier_summary': outlier_summary
+        'mean': float(mean_val),
+        'ucl': float(ucl),
+        'lcl': float(lcl),
+        'sigma_hat': float(sigma_hat),
+        'mr_bar': float(mr_bar),
+        'moving_ranges': [float(mr) for mr in moving_ranges],
+        'method': 'imr_chart'
     })
 
 def generate_plot_data(test_id, test_data, plot_options=None):
@@ -403,9 +296,7 @@ def generate_plot_data(test_id, test_data, plot_options=None):
     if plot_options is None:
         plot_options = {
             'show_spec_limits': True,
-            'show_control_limits': True,
-            'show_outliers': True,
-            'clean_outliers': False
+            'show_control_limits': True
         }
     
     df = pd.DataFrame(test_data)
@@ -416,7 +307,7 @@ def generate_plot_data(test_id, test_data, plot_options=None):
     serial_numbers = df['serial_number'].values
     
     n = len(values)
-    if n < 3:
+    if n < 2:
         return None
     
     # Extract limits from the data
@@ -432,25 +323,11 @@ def generate_plot_data(test_id, test_data, plot_options=None):
             lsl = data_point['low_limit']
             break
     
-    # Detect outliers
-    outlier_info = detect_outliers_multiple_methods(values, test_id)
+    # Calculate I-MR control chart limits
+    imr_results = calculate_imr_control_limits(values)
     
-    # Apply outlier cleaning if requested
-    if plot_options.get('clean_outliers') and outlier_info['has_outliers']:
-        clean_indices = outlier_info['clean_indices']
-        values = values[clean_indices]
-        test_results = test_results[clean_indices]
-        serial_numbers = serial_numbers[clean_indices]
-        n = len(values)
-    
-    # Calculate statistics
-    mean = np.mean(values)
-    std = np.std(values, ddof=1)
-    ucl = mean + 3 * std
-    lcl = mean - 3 * std
-    
-    # Identify out-of-control points
-    out_of_control = (values > ucl) | (values < lcl)
+    # Identify out-of-control points using I-MR limits
+    out_of_control = (values > imr_results['ucl']) | (values < imr_results['lcl'])
     
     # Categorize by EIF (Engineering Identification Flag) instead of hardcoded SN prefixes
     eif_categories = {}
@@ -470,15 +347,20 @@ def generate_plot_data(test_id, test_data, plot_options=None):
         'pass_indices': np.where(test_results == 'PASS')[0].tolist(),
         'fail_indices': np.where(test_results == 'FAIL')[0].tolist(),
         'ooc_indices': np.where(out_of_control)[0].tolist(),
-        'outlier_indices': outlier_info.get('outlier_indices', []) if plot_options.get('show_outliers') else [],
         
-        # Statistics
-        'mean': float(mean),
-        'std': float(std),
-        'ucl': float(ucl),
-        'lcl': float(lcl),
+        # I-MR Statistics
+        'mean': imr_results['mean'],
+        'std': imr_results['sigma_hat'],  # Use I-MR estimated sigma instead of sample std
+        'ucl': imr_results['ucl'],
+        'lcl': imr_results['lcl'],
         'usl': float(usl) if usl is not None else None,
         'lsl': float(lsl) if lsl is not None else None,
+        
+        # I-MR specific data
+        'mr_bar': imr_results['mr_bar'],
+        'sigma_hat': imr_results['sigma_hat'],
+        'moving_ranges': imr_results['moving_ranges'],
+        'control_method': imr_results['method'],
         
         # Counts
         'n_samples': int(n),
@@ -493,7 +375,6 @@ def generate_plot_data(test_id, test_data, plot_options=None):
         'test_id': test_id,
         'unit': df['unit'].iloc[0] if 'unit' in df.columns and df['unit'].iloc[0] else '',
         'has_limits': usl is not None or lsl is not None,
-        'outlier_info': outlier_info,
         'plot_options': plot_options
     }
     
