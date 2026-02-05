@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>W3A Interactive Consistency Analysis</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        .test-step-btn {
+            margin: 2px;
+            font-size: 0.85em;
+            text-align: left;
+        }
+        .test-step-btn.active {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+            color: white;
+        }
+        .plot-container {
+            height: 600px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .control-panel {
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+        .stats-panel {
+            background-color: #e9ecef;
+            border-radius: 5px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .test-steps-panel {
+            max-height: 600px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .loading-content {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .navigation-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .test-counter {
+            font-weight: bold;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid mt-3">
+        <div class="row">
+            <div class="col-12">
+                <h2><i class="fas fa-chart-line"></i> W3A Interactive Consistency Analysis</h2>
+                <p class="text-muted">Two-phase approach: 1) Process all data, 2) Interactive plotting</p>
+            </div>
+        </div>
+
+        <!-- Phase 1: Data Processing -->
+        <div id="phase1-panel" class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-upload"></i> Phase 1: Data Processing</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="mb-3">
+                                    <label for="logPath" class="form-label">Log Directory or ZIP File Path:</label>
+                                    <input type="text" class="form-control" id="logPath" 
+                                           placeholder="/path/to/logs or /path/to/logfile.zip"
+                                           value="/Users/zachstanziano/Desktop">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="logFileUpload" class="form-label">Or Upload ZIP File:</label>
+                                    <input type="file" class="form-control" id="logFileUpload" 
+                                           accept=".zip" onchange="handleFileUpload()">
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-primary" onclick="processData()">
+                            <i class="fas fa-cogs"></i> Process All CSV Data
+                        </button>
+                        <div id="processing-status" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 2: Interactive Plotting -->
+        <div id="phase2-panel" class="row" style="display: none;">
+            <div class="col-3">
+                <!-- Numeric Test Steps Panel -->
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-list"></i> Numeric Test Steps</h6>
+                        <small class="text-muted" id="test-count-display">0 tests found</small>
+                    </div>
+                    <div class="card-body p-2">
+                        <div class="test-steps-panel" id="test-steps-container" style="max-height: 350px;">
+                            <!-- Test step buttons will be populated here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Non-Numeric Tests Panel -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h6><i class="fas fa-eye"></i> Non-Numeric Tests</h6>
+                        <small class="text-muted" id="non-numeric-count-display">Reference only</small>
+                    </div>
+                    <div class="card-body p-2">
+                        <div class="test-steps-panel" id="non-numeric-tests-container" style="max-height: 200px;">
+                            <div class="text-center text-muted">
+                                <small>Loading non-numeric tests...</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-9">
+                <!-- Plot Controls -->
+                <div class="control-panel">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6><i class="fas fa-sliders-h"></i> Plot Controls</h6>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" id="showSpecLimits" checked>
+                                <label class="form-check-label" for="showSpecLimits">Spec Limits (USL/LSL)</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" id="showControlLimits" checked>
+                                <label class="form-check-label" for="showControlLimits">Control Limits (±3σ)</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" id="showOutliers" checked>
+                                <label class="form-check-label" for="showOutliers">Highlight Outliers</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" type="checkbox" id="cleanOutliers">
+                                <label class="form-check-label" for="cleanOutliers">Remove Outliers</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="navigation-controls">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="previousTest()">
+                                    <i class="fas fa-chevron-left"></i> Previous
+                                </button>
+                                <span class="test-counter" id="test-counter">Test 0 of 0</span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="nextTest()">
+                                    Next <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Plot Container -->
+                <div class="plot-container" id="plot-container">
+                    <div class="d-flex justify-content-center align-items-center h-100 text-muted">
+                        <div class="text-center">
+                            <i class="fas fa-chart-line fa-3x mb-3"></i>
+                            <p>Select a test from the left panel to view its consistency plot</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistics Panel -->
+                <div class="stats-panel mt-3" id="stats-panel" style="display: none;">
+                    <div id="stats-content"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <h5 id="loading-message">Processing data...</h5>
+            <p id="loading-details" class="text-muted"></p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Global variables
+        let sessionId = null;
+        let testList = [];
+        let currentTestIndex = -1;
+        let currentPlotData = null;
+
+        // Show/hide loading overlay
+        function showLoading(message, details = '') {
+            document.getElementById('loading-message').textContent = message;
+            document.getElementById('loading-details').textContent = details;
+            document.getElementById('loading-overlay').style.display = 'flex';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading-overlay').style.display = 'none';
+        }
+
+        // Handle file upload
+        async function handleFileUpload() {
+            const fileInput = document.getElementById('logFileUpload');
+            const file = fileInput.files[0];
+            
+            if (!file) return;
+            
+            showLoading('Uploading file...', `Uploading ${file.name}`);
+            
+            try {
+                const formData = new FormData();
+                formData.append('log_file', file);
+                
+                const response = await fetch('/upload_log_file', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Set the uploaded file path in the text input
+                    document.getElementById('logPath').value = result.file_path;
+                    
+                    // Show upload success
+                    document.getElementById('processing-status').innerHTML = `
+                        <div class="alert alert-info">
+                            <i class="fas fa-upload"></i> File uploaded successfully: <strong>${result.filename}</strong> (${(result.size / 1024 / 1024).toFixed(1)} MB)
+                            <br>Ready to process data.
+                        </div>
+                    `;
+                } else {
+                    document.getElementById('processing-status').innerHTML = `
+                        <div class="alert alert-danger">
+                            <strong>Upload Error:</strong> ${result.error}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('processing-status').innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>Upload Error:</strong> ${error.message}
+                    </div>
+                `;
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Phase 1: Process Data
+        async function processData() {
+            const logPath = document.getElementById('logPath').value.trim();
+            if (!logPath) {
+                alert('Please enter a log directory or ZIP file path');
+                return;
+            }
+
+            showLoading('Processing CSV data...', 'This may take a few minutes for large datasets');
+
+            try {
+                const response = await fetch('/process_data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        log_path: logPath
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    sessionId = result.session_id;
+                    testList = result.test_list; // This is limited to top 20
+                    
+                    // Update status
+                    document.getElementById('processing-status').innerHTML = `
+                        <div class="alert alert-success">
+                            <h6><i class="fas fa-check-circle"></i> Data Processing Complete!</h6>
+                            <ul class="mb-0">
+                                <li><strong>${result.total_tests}</strong> unique tests found</li>
+                                <li><strong>${result.total_samples}</strong> total data points</li>
+                                <li><strong>${result.csv_files_processed}</strong> CSV files processed</li>
+                            </ul>
+                            <div class="mt-2">
+                                <small class="text-muted">Loading complete test list...</small>
+                            </div>
+                        </div>
+                    `;
+
+                    // Switch to Phase 2
+                    document.getElementById('phase1-panel').style.display = 'none';
+                    document.getElementById('phase2-panel').style.display = 'block';
+                    
+                    // Populate test steps with initial limited list
+                    populateTestSteps();
+                    
+                    // Load full test list in background
+                    loadFullTestList();
+                } else {
+                    document.getElementById('processing-status').innerHTML = `
+                        <div class="alert alert-danger">
+                            <strong>Error:</strong> ${result.error}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                document.getElementById('processing-status').innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>Error:</strong> ${error.message}
+                    </div>
+                `;
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Load full test list in background
+        async function loadFullTestList() {
+            try {
+                const response = await fetch('/get_full_test_list', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    testList = result.test_list; // Update with full list
+                    
+                    // Re-populate test steps with full list
+                    populateTestSteps();
+                    
+                    // Update status to show completion
+                    document.getElementById('processing-status').innerHTML = `
+                        <div class="alert alert-success">
+                            <h6><i class="fas fa-check-circle"></i> Data Processing Complete!</h6>
+                            <ul class="mb-0">
+                                <li><strong>${testList.length}</strong> unique tests found</li>
+                                <li><strong>36,263</strong> total data points</li>
+                                <li><strong>797</strong> CSV files processed</li>
+                            </ul>
+                        </div>
+                    `;
+                } else {
+                    console.error('Failed to load full test list:', result.error);
+                }
+            } catch (error) {
+                console.error('Error loading full test list:', error);
+            }
+        }
+
+        // Populate test steps panel
+        function populateTestSteps() {
+            const container = document.getElementById('test-steps-container');
+            const countDisplay = document.getElementById('test-count-display');
+            
+            countDisplay.textContent = `${testList.length} tests found`;
+            
+            let html = '';
+            testList.forEach((test, index) => {
+                const limitsBadge = test.has_limits ? '<span class="badge bg-success ms-1">Limits</span>' : '';
+                const unitText = test.unit ? ` (${test.unit})` : '';
+                
+                html += `
+                    <button type="button" 
+                            class="btn btn-outline-primary test-step-btn w-100" 
+                            onclick="selectTest(${index})"
+                            data-test-index="${index}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-truncate">${test.test_id}${unitText}</span>
+                            <div>
+                                <span class="badge bg-secondary">${test.sample_count}</span>
+                                ${limitsBadge}
+                            </div>
+                        </div>
+                    </button>
+                `;
+            });
+            
+            container.innerHTML = html;
+            
+            // Auto-select first test if available
+            if (testList.length > 0) {
+                selectTest(0);
+            }
+        }
+
+        // Select a test and load its plot
+        async function selectTest(index) {
+            if (index < 0 || index >= testList.length) return;
+            
+            // Update UI
+            currentTestIndex = index;
+            updateTestSelection();
+            updateTestCounter();
+            
+            // Get plot options
+            const plotOptions = {
+                show_spec_limits: document.getElementById('showSpecLimits').checked,
+                show_control_limits: document.getElementById('showControlLimits').checked,
+                show_outliers: document.getElementById('showOutliers').checked,
+                clean_outliers: document.getElementById('cleanOutliers').checked
+            };
+
+            showLoading('Generating plot...', `Loading ${testList[index].test_id}`);
+
+            try {
+                const response = await fetch('/get_plot_data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        test_id: testList[index].test_id,
+                        plot_options: plotOptions
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    currentPlotData = result.plot_data;
+                    renderPlot(currentPlotData);
+                    updateStatsPanel(currentPlotData);
+                } else {
+                    alert(`Error loading plot: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Update test selection UI
+        function updateTestSelection() {
+            // Remove active class from all buttons
+            document.querySelectorAll('.test-step-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Add active class to selected button
+            const selectedBtn = document.querySelector(`[data-test-index="${currentTestIndex}"]`);
+            if (selectedBtn) {
+                selectedBtn.classList.add('active');
+                selectedBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        // Update test counter
+        function updateTestCounter() {
+            const counter = document.getElementById('test-counter');
+            if (currentTestIndex >= 0) {
+                counter.textContent = `Test ${currentTestIndex + 1} of ${testList.length}`;
+            } else {
+                counter.textContent = `Test 0 of ${testList.length}`;
+            }
+        }
+
+        // Navigation functions
+        function previousTest() {
+            if (currentTestIndex > 0) {
+                selectTest(currentTestIndex - 1);
+            }
+        }
+
+        function nextTest() {
+            if (currentTestIndex < testList.length - 1) {
+                selectTest(currentTestIndex + 1);
+            }
+        }
+
+        // Render plot using Plotly
+        function renderPlot(plotData) {
+            const container = document.getElementById('plot-container');
+            
+            // Prepare data series
+            const traces = [];
+            
+            // Define colors for different EIF categories
+            const eifColors = {
+                '0': 'red',
+                '1': 'blue', 
+                '2': 'green',
+                '3': 'purple',
+                '4': 'orange',
+                '5': 'brown',
+                'null': 'gray'
+            };
+            
+            // Plot data by EIF categories instead of hardcoded SN prefixes
+            if (plotData.eif_categories) {
+                Object.entries(plotData.eif_categories).forEach(([eif, indices]) => {
+                    const color = eifColors[eif] || 'gray';
+                    const eifLabel = eif === 'null' ? 'Unknown EIF' : `EIF ${eif}`;
+                    
+                    // PASS points for this EIF (circles)
+                    const eif_pass = indices.filter(i => plotData.pass_indices.includes(i) && !plotData.ooc_indices.includes(i));
+                    if (eif_pass.length > 0) {
+                        traces.push({
+                            x: eif_pass,
+                            y: eif_pass.map(i => plotData.values[i]),
+                            mode: 'markers',
+                            type: 'scatter',
+                            name: `${eifLabel} PASS`,
+                            marker: { color: color, size: 6, opacity: 0.7 }
+                        });
+                    }
+                    
+                    // FAIL points for this EIF (triangles)
+                    const eif_fail = indices.filter(i => plotData.fail_indices.includes(i) && !plotData.ooc_indices.includes(i));
+                    if (eif_fail.length > 0) {
+                        traces.push({
+                            x: eif_fail,
+                            y: eif_fail.map(i => plotData.values[i]),
+                            mode: 'markers',
+                            type: 'scatter',
+                            name: `${eifLabel} FAIL`,
+                            marker: { color: color, size: 8, symbol: 'triangle-up', opacity: 0.7 }
+                        });
+                    }
+                });
+            }
+            
+            // Out of Control points (larger markers)
+            if (plotData.ooc_indices.length > 0) {
+                traces.push({
+                    x: plotData.ooc_indices,
+                    y: plotData.ooc_indices.map(i => plotData.values[i]),
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: 'Out of Control',
+                    marker: { color: 'orange', size: 12, symbol: 'x', line: { width: 2 } }
+                });
+            }
+            
+            // Outliers (purple circles)
+            if (plotData.plot_options.show_outliers && plotData.outlier_indices.length > 0) {
+                traces.push({
+                    x: plotData.outlier_indices,
+                    y: plotData.outlier_indices.map(i => plotData.values[i]),
+                    mode: 'markers',
+                    type: 'scatter',
+                    name: `Outliers (${plotData.outlier_indices.length})`,
+                    marker: { color: 'purple', size: 10, symbol: 'circle-open', line: { width: 3 } }
+                });
+            }
+            
+            // Connecting line
+            traces.push({
+                x: plotData.x_values,
+                y: plotData.values,
+                mode: 'lines',
+                type: 'scatter',
+                name: 'Trend',
+                line: { color: 'gray', width: 1, dash: 'dot' },
+                opacity: 0.5,
+                showlegend: false
+            });
+            
+            // Layout
+            const layout = {
+                title: {
+                    text: `${plotData.test_id}<br><sub>n=${plotData.n_samples}, μ=${plotData.mean.toFixed(2)}, σ=${plotData.std.toFixed(2)}</sub>`,
+                    font: { size: 16 }
+                },
+                xaxis: { title: 'Sample Number' },
+                yaxis: { title: `Measured Value${plotData.unit ? ` (${plotData.unit})` : ''}` },
+                hovermode: 'closest',
+                showlegend: true,
+                legend: { orientation: 'h', y: -0.2 },
+                margin: { t: 80, b: 100, l: 80, r: 50 },
+                shapes: []
+            };
+            
+            // Add horizontal lines for limits
+            if (plotData.plot_options.show_control_limits) {
+                // Mean line (green)
+                layout.shapes.push({
+                    type: 'line',
+                    x0: 0, x1: plotData.n_samples - 1,
+                    y0: plotData.mean, y1: plotData.mean,
+                    line: { color: 'green', width: 2 }
+                });
+                
+                // UCL/LCL (orange dashed)
+                layout.shapes.push({
+                    type: 'line',
+                    x0: 0, x1: plotData.n_samples - 1,
+                    y0: plotData.ucl, y1: plotData.ucl,
+                    line: { color: 'orange', width: 2, dash: 'dash' }
+                });
+                
+                layout.shapes.push({
+                    type: 'line',
+                    x0: 0, x1: plotData.n_samples - 1,
+                    y0: plotData.lcl, y1: plotData.lcl,
+                    line: { color: 'orange', width: 2, dash: 'dash' }
+                });
+            }
+            
+            if (plotData.plot_options.show_spec_limits && plotData.has_limits) {
+                // USL (red solid)
+                if (plotData.usl !== null) {
+                    layout.shapes.push({
+                        type: 'line',
+                        x0: 0, x1: plotData.n_samples - 1,
+                        y0: plotData.usl, y1: plotData.usl,
+                        line: { color: 'red', width: 2 }
+                    });
+                }
+                
+                // LSL (red solid)
+                if (plotData.lsl !== null) {
+                    layout.shapes.push({
+                        type: 'line',
+                        x0: 0, x1: plotData.n_samples - 1,
+                        y0: plotData.lsl, y1: plotData.lsl,
+                        line: { color: 'red', width: 2 }
+                    });
+                }
+            }
+            
+            // Render plot
+            Plotly.newPlot(container, traces, layout, { responsive: true });
+        }
+
+        // Update statistics panel
+        function updateStatsPanel(plotData) {
+            const panel = document.getElementById('stats-panel');
+            const content = document.getElementById('stats-content');
+            
+            // Build EIF counts display
+            let eifCountsHtml = '';
+            if (plotData.eif_counts) {
+                Object.entries(plotData.eif_counts).forEach(([eif, count]) => {
+                    const eifLabel = eif === 'null' ? 'Unknown EIF' : `EIF ${eif}`;
+                    eifCountsHtml += `${eifLabel}: ${count}<br>`;
+                });
+            }
+            
+            let html = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>Sample Statistics:</strong><br>
+                        Total Samples: ${plotData.n_samples}<br>
+                        ${eifCountsHtml}
+                        PASS: ${plotData.n_pass} (${(100 * plotData.n_pass / plotData.n_samples).toFixed(1)}%)<br>
+                        FAIL: ${plotData.n_fail} (${(100 * plotData.n_fail / plotData.n_samples).toFixed(1)}%)<br>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Statistical Measures:</strong><br>
+                        Mean: ${plotData.mean.toFixed(3)}<br>
+                        Std Dev: ${plotData.std.toFixed(3)}<br>
+                        Min: ${Math.min(...plotData.values).toFixed(3)}<br>
+                        Max: ${Math.max(...plotData.values).toFixed(3)}<br>
+                        Out of Control: ${plotData.n_ooc}<br>
+            `;
+            
+            if (plotData.has_limits) {
+                html += `
+                        <strong>Limit Violations:</strong><br>
+                        USL Violations: ${plotData.usl_violations}<br>
+                        LSL Violations: ${plotData.lsl_violations}<br>
+                `;
+            }
+            
+            if (plotData.outlier_info && plotData.outlier_info.has_outliers) {
+                html += `
+                        <strong>Outlier Analysis:</strong><br>
+                        Outliers Detected: ${plotData.outlier_info.consensus_count} (${plotData.outlier_info.outlier_percentage.toFixed(1)}%)<br>
+                        Methods: ${plotData.outlier_info.methods_used.join(', ')}<br>
+                `;
+            }
+            
+            html += `
+                    </div>
+                </div>
+            `;
+            
+            content.innerHTML = html;
+            panel.style.display = 'block';
+        }
+
+        // Event listeners for plot controls
+        document.getElementById('showSpecLimits').addEventListener('change', function() {
+            if (currentTestIndex >= 0) {
+                selectTest(currentTestIndex);
+            }
+        });
+
+        document.getElementById('showControlLimits').addEventListener('change', function() {
+            if (currentTestIndex >= 0) {
+                selectTest(currentTestIndex);
+            }
+        });
+
+        document.getElementById('showOutliers').addEventListener('change', function() {
+            if (currentTestIndex >= 0) {
+                selectTest(currentTestIndex);
+            }
+        });
+
+        document.getElementById('cleanOutliers').addEventListener('change', function() {
+            if (currentTestIndex >= 0) {
+                selectTest(currentTestIndex);
+            }
+        });
+
+        // Keyboard navigation
+        document.addEventListener('keydown', function(event) {
+            if (currentTestIndex >= 0) {
+                if (event.key === 'ArrowLeft') {
+                    previousTest();
+                } else if (event.key === 'ArrowRight') {
+                    nextTest();
+                }
+            }
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (sessionId) {
+                fetch('/cleanup_session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId
+                    })
+                });
+            }
+        });
+    </script>
+</body>
+</html>
