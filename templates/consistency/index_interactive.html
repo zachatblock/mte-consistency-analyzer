@@ -193,6 +193,21 @@
                                     </div>
                                 </div>
                             </div>
+                            <!-- Move to Non-Numeric Button -->
+                            <div class="row mt-3" id="move-test-controls" style="display: none;">
+                                <div class="col-12">
+                                    <div class="alert alert-info p-2">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <small><strong>Test Management:</strong> Move tests that are numeric but conceptually non-numeric (like Slot ID, Error codes)</small>
+                                            </div>
+                                            <button type="button" class="btn btn-sm btn-warning" onclick="moveTestToNonNumeric()" id="moveTestBtn">
+                                                <i class="fas fa-arrow-right"></i> Move to Non-Numeric Tests
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -495,6 +510,7 @@
             currentTestIndex = index;
             updateTestSelection();
             updateTestCounter();
+            showMoveTestControls(); // Show the move button when a test is selected
             
             // Get plot options
             const plotOptions = {
@@ -783,6 +799,93 @@
             
             content.innerHTML = html;
             panel.style.display = 'block';
+        }
+
+        // Show move test controls when a test is selected
+        function showMoveTestControls() {
+            const controls = document.getElementById('move-test-controls');
+            const moveBtn = document.getElementById('moveTestBtn');
+            
+            if (currentTestIndex >= 0 && testList[currentTestIndex]) {
+                controls.style.display = 'block';
+                moveBtn.textContent = `Move "${testList[currentTestIndex].test_id}" to Non-Numeric Tests`;
+                moveBtn.innerHTML = `<i class="fas fa-arrow-right"></i> Move "${testList[currentTestIndex].test_id}" to Non-Numeric Tests`;
+            } else {
+                controls.style.display = 'none';
+            }
+        }
+
+        // Move current test to non-numeric tests
+        async function moveTestToNonNumeric() {
+            if (currentTestIndex < 0 || !testList[currentTestIndex]) {
+                alert('No test selected');
+                return;
+            }
+
+            const testId = testList[currentTestIndex].test_id;
+            const confirmMove = confirm(`Are you sure you want to move "${testId}" to the Non-Numeric Tests section?\n\nThis test will no longer be available for plotting but will appear in the non-numeric tests list.`);
+            
+            if (!confirmMove) {
+                return;
+            }
+
+            showLoading('Moving test...', `Moving "${testId}" to non-numeric tests`);
+
+            try {
+                const response = await fetch('/move_test_to_non_numeric', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        test_id: testId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Show success message
+                    alert(`Success: ${result.message}\n\nMoved ${result.moved_data_points} data points to non-numeric tests.`);
+                    
+                    // Remove the test from the current test list
+                    testList.splice(currentTestIndex, 1);
+                    
+                    // Clear current selection
+                    currentTestIndex = -1;
+                    currentPlotData = null;
+                    
+                    // Update UI
+                    populateTestSteps();
+                    
+                    // Hide move controls
+                    document.getElementById('move-test-controls').style.display = 'none';
+                    
+                    // Clear plot container
+                    document.getElementById('plot-container').innerHTML = `
+                        <div class="d-flex justify-content-center align-items-center h-100 text-muted">
+                            <div class="text-center">
+                                <i class="fas fa-chart-line fa-3x mb-3"></i>
+                                <p>Select a test from the left panel to view its consistency plot</p>
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Hide stats panel
+                    document.getElementById('stats-panel').style.display = 'none';
+                    
+                    // Reload non-numeric tests to show the moved test
+                    loadFullTestList();
+                    
+                } else {
+                    alert(`Error moving test: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                hideLoading();
+            }
         }
 
         // Event listeners for plot controls
