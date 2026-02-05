@@ -556,6 +556,7 @@
                     currentPlotData = result.plot_data;
                     populateEIFCheckboxes(currentPlotData);
                     renderPlot(currentPlotData);
+                    renderHistogram(currentPlotData);
                     updateStatsPanel(currentPlotData);
                 } else {
                     alert(`Error loading plot: ${result.error}`);
@@ -671,6 +672,86 @@
             
 
             
+            // Control limit traces for legend (if enabled)
+            if (plotData.plot_options.show_control_limits) {
+                // Process Mean (green line)
+                traces.push({
+                    x: [0, plotData.n_samples - 1],
+                    y: [plotData.mean, plotData.mean],
+                    mode: 'lines',
+                    type: 'scatter',
+                    name: 'Process Mean',
+                    line: { color: 'green', width: 2 }
+                });
+                
+                // UCL (orange dashed)
+                traces.push({
+                    x: [0, plotData.n_samples - 1],
+                    y: [plotData.ucl, plotData.ucl],
+                    mode: 'lines',
+                    type: 'scatter',
+                    name: 'UCL (I-MR)',
+                    line: { color: 'orange', width: 2, dash: 'dash' }
+                });
+                
+                // LCL (orange dashed)
+                traces.push({
+                    x: [0, plotData.n_samples - 1],
+                    y: [plotData.lcl, plotData.lcl],
+                    mode: 'lines',
+                    type: 'scatter',
+                    name: 'LCL (I-MR)',
+                    line: { color: 'orange', width: 2, dash: 'dash' }
+                });
+            }
+            
+            // Specification limit traces for legend (always present, greyed if no limit)
+            if (plotData.plot_options.show_spec_limits) {
+                if (plotData.usl !== null) {
+                    traces.push({
+                        x: [0, plotData.n_samples - 1],
+                        y: [plotData.usl, plotData.usl],
+                        mode: 'lines',
+                        type: 'scatter',
+                        name: 'USL',
+                        line: { color: 'red', width: 2 }
+                    });
+                } else {
+                    // Grey USL entry when no limit found
+                    traces.push({
+                        x: [],
+                        y: [],
+                        mode: 'lines',
+                        type: 'scatter',
+                        name: 'USL (No limit found)',
+                        line: { color: '#cccccc', width: 2 },
+                        visible: 'legendonly'
+                    });
+                }
+                
+                if (plotData.lsl !== null) {
+                    traces.push({
+                        x: [0, plotData.n_samples - 1],
+                        y: [plotData.lsl, plotData.lsl],
+                        mode: 'lines',
+                        type: 'scatter',
+                        name: 'LSL',
+                        line: { color: 'red', width: 2 }
+                    });
+                } else {
+                    // Grey LSL entry when no limit found
+                    traces.push({
+                        x: [],
+                        y: [],
+                        mode: 'lines',
+                        type: 'scatter',
+                        name: 'LSL (No limit found)',
+                        line: { color: '#cccccc', width: 2 },
+                        visible: 'legendonly'
+                    });
+                }
+            }
+            
             // Connecting line
             traces.push({
                 x: plotData.x_values,
@@ -694,57 +775,8 @@
                 hovermode: 'closest',
                 showlegend: true,
                 legend: { orientation: 'h', y: -0.2 },
-                margin: { t: 80, b: 100, l: 80, r: 50 },
-                shapes: []
+                margin: { t: 80, b: 100, l: 80, r: 50 }
             };
-            
-            // Add horizontal lines for limits
-            if (plotData.plot_options.show_control_limits) {
-                // Mean line (green)
-                layout.shapes.push({
-                    type: 'line',
-                    x0: 0, x1: plotData.n_samples - 1,
-                    y0: plotData.mean, y1: plotData.mean,
-                    line: { color: 'green', width: 2 }
-                });
-                
-                // UCL/LCL (orange dashed)
-                layout.shapes.push({
-                    type: 'line',
-                    x0: 0, x1: plotData.n_samples - 1,
-                    y0: plotData.ucl, y1: plotData.ucl,
-                    line: { color: 'orange', width: 2, dash: 'dash' }
-                });
-                
-                layout.shapes.push({
-                    type: 'line',
-                    x0: 0, x1: plotData.n_samples - 1,
-                    y0: plotData.lcl, y1: plotData.lcl,
-                    line: { color: 'orange', width: 2, dash: 'dash' }
-                });
-            }
-            
-            if (plotData.plot_options.show_spec_limits && plotData.has_limits) {
-                // USL (red solid)
-                if (plotData.usl !== null) {
-                    layout.shapes.push({
-                        type: 'line',
-                        x0: 0, x1: plotData.n_samples - 1,
-                        y0: plotData.usl, y1: plotData.usl,
-                        line: { color: 'red', width: 2 }
-                    });
-                }
-                
-                // LSL (red solid)
-                if (plotData.lsl !== null) {
-                    layout.shapes.push({
-                        type: 'line',
-                        x0: 0, x1: plotData.n_samples - 1,
-                        y0: plotData.lsl, y1: plotData.lsl,
-                        line: { color: 'red', width: 2 }
-                    });
-                }
-            }
             
             // Render plot
             Plotly.newPlot(container, traces, layout, { responsive: true });
@@ -873,6 +905,86 @@
             
 
             
+            // Control limit traces for legend (if enabled)
+            if (filteredData.plot_options.show_control_limits) {
+                // Process Mean (green line)
+                traces.push({
+                    x: [0, Math.max(...filteredData.x_values)],
+                    y: [filteredData.mean, filteredData.mean],
+                    mode: 'lines',
+                    type: 'scatter',
+                    name: 'Process Mean',
+                    line: { color: 'green', width: 2 }
+                });
+                
+                // UCL (orange dashed)
+                traces.push({
+                    x: [0, Math.max(...filteredData.x_values)],
+                    y: [filteredData.ucl, filteredData.ucl],
+                    mode: 'lines',
+                    type: 'scatter',
+                    name: 'UCL (I-MR)',
+                    line: { color: 'orange', width: 2, dash: 'dash' }
+                });
+                
+                // LCL (orange dashed)
+                traces.push({
+                    x: [0, Math.max(...filteredData.x_values)],
+                    y: [filteredData.lcl, filteredData.lcl],
+                    mode: 'lines',
+                    type: 'scatter',
+                    name: 'LCL (I-MR)',
+                    line: { color: 'orange', width: 2, dash: 'dash' }
+                });
+            }
+            
+            // Specification limit traces for legend (always present, greyed if no limit)
+            if (filteredData.plot_options.show_spec_limits) {
+                if (filteredData.usl !== null) {
+                    traces.push({
+                        x: [0, Math.max(...filteredData.x_values)],
+                        y: [filteredData.usl, filteredData.usl],
+                        mode: 'lines',
+                        type: 'scatter',
+                        name: 'USL',
+                        line: { color: 'red', width: 2 }
+                    });
+                } else {
+                    // Grey USL entry when no limit found
+                    traces.push({
+                        x: [],
+                        y: [],
+                        mode: 'lines',
+                        type: 'scatter',
+                        name: 'USL (No limit found)',
+                        line: { color: '#cccccc', width: 2 },
+                        visible: 'legendonly'
+                    });
+                }
+                
+                if (filteredData.lsl !== null) {
+                    traces.push({
+                        x: [0, Math.max(...filteredData.x_values)],
+                        y: [filteredData.lsl, filteredData.lsl],
+                        mode: 'lines',
+                        type: 'scatter',
+                        name: 'LSL',
+                        line: { color: 'red', width: 2 }
+                    });
+                } else {
+                    // Grey LSL entry when no limit found
+                    traces.push({
+                        x: [],
+                        y: [],
+                        mode: 'lines',
+                        type: 'scatter',
+                        name: 'LSL (No limit found)',
+                        line: { color: '#cccccc', width: 2 },
+                        visible: 'legendonly'
+                    });
+                }
+            }
+            
             // Connecting line (only for filtered data)
             if (filteredData.x_values.length > 1) {
                 traces.push({
@@ -898,57 +1010,8 @@
                 hovermode: 'closest',
                 showlegend: true,
                 legend: { orientation: 'h', y: -0.2 },
-                margin: { t: 80, b: 100, l: 80, r: 50 },
-                shapes: []
+                margin: { t: 80, b: 100, l: 80, r: 50 }
             };
-            
-            // Add horizontal lines for limits
-            if (filteredData.plot_options.show_control_limits) {
-                // Mean line (green)
-                layout.shapes.push({
-                    type: 'line',
-                    x0: 0, x1: Math.max(...filteredData.x_values),
-                    y0: filteredData.mean, y1: filteredData.mean,
-                    line: { color: 'green', width: 2 }
-                });
-                
-                // UCL/LCL (orange dashed)
-                layout.shapes.push({
-                    type: 'line',
-                    x0: 0, x1: Math.max(...filteredData.x_values),
-                    y0: filteredData.ucl, y1: filteredData.ucl,
-                    line: { color: 'orange', width: 2, dash: 'dash' }
-                });
-                
-                layout.shapes.push({
-                    type: 'line',
-                    x0: 0, x1: Math.max(...filteredData.x_values),
-                    y0: filteredData.lcl, y1: filteredData.lcl,
-                    line: { color: 'orange', width: 2, dash: 'dash' }
-                });
-            }
-            
-            if (filteredData.plot_options.show_spec_limits && filteredData.has_limits) {
-                // USL (red solid)
-                if (filteredData.usl !== null) {
-                    layout.shapes.push({
-                        type: 'line',
-                        x0: 0, x1: Math.max(...filteredData.x_values),
-                        y0: filteredData.usl, y1: filteredData.usl,
-                        line: { color: 'red', width: 2 }
-                    });
-                }
-                
-                // LSL (red solid)
-                if (filteredData.lsl !== null) {
-                    layout.shapes.push({
-                        type: 'line',
-                        x0: 0, x1: Math.max(...filteredData.x_values),
-                        y0: filteredData.lsl, y1: filteredData.lsl,
-                        line: { color: 'red', width: 2 }
-                    });
-                }
-            }
             
             // Render plot
             Plotly.newPlot(container, traces, layout, { responsive: true });
@@ -1049,6 +1112,113 @@
             });
             
             return filteredData;
+        }
+
+        // Render histogram for stable data selection
+        function renderHistogram(plotData) {
+            const container = document.getElementById('histogram-container');
+            const panel = document.getElementById('histogram-panel');
+            
+            if (!plotData.histogram) {
+                panel.style.display = 'none';
+                return;
+            }
+            
+            const histData = plotData.histogram;
+            
+            // Create histogram trace
+            const traces = [{
+                x: histData.bin_centers,
+                y: histData.bin_counts,
+                type: 'bar',
+                name: 'Data Distribution',
+                marker: {
+                    color: histData.bin_centers.map((_, i) => {
+                        if (i === histData.selected_bin) {
+                            return 'blue'; // Selected bin
+                        } else if (i === histData.dominant_bin && histData.selected_bin === null) {
+                            return 'lightblue'; // Auto-selected dominant bin
+                        } else {
+                            return 'lightgray'; // Regular bins
+                        }
+                    }),
+                    line: {
+                        color: 'black',
+                        width: 1
+                    }
+                },
+                hovertemplate: 'Value Range: %{x}<br>Count: %{y}<br>Percentage: %{customdata}%<extra></extra>',
+                customdata: histData.bin_counts.map(count => ((count / histData.total_samples) * 100).toFixed(1))
+            }];
+            
+            const layout = {
+                title: {
+                    text: `Data Distribution (${histData.total_samples} samples)${histData.use_log_bins ? ' - Log Scale' : ''}`,
+                    font: { size: 14 }
+                },
+                xaxis: { 
+                    title: `Value${plotData.unit ? ` (${plotData.unit})` : ''}`,
+                    type: histData.use_log_bins ? 'log' : 'linear'
+                },
+                yaxis: { title: 'Count' },
+                showlegend: false,
+                margin: { t: 50, b: 50, l: 60, r: 30 },
+                bargap: 0.1
+            };
+            
+            // Render histogram
+            Plotly.newPlot(container, traces, layout, { responsive: true });
+            
+            // Add click event listener for bin selection
+            container.on('plotly_click', function(data) {
+                if (data.points.length > 0) {
+                    const clickedBinIndex = data.points[0].pointIndex;
+                    onBinClick(clickedBinIndex);
+                }
+            });
+            
+            // Show histogram panel
+            panel.style.display = 'block';
+        }
+        
+        // Handle histogram bin click for stable data selection
+        async function onBinClick(binIndex) {
+            if (!currentPlotData || !currentPlotData.histogram) return;
+            
+            showLoading('Updating control limits...', `Calculating I-MR limits from bin ${binIndex}`);
+            
+            try {
+                const response = await fetch('/update_control_limits', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        test_id: currentPlotData.test_id,
+                        selected_bin: binIndex,
+                        plot_options: {
+                            show_spec_limits: document.getElementById('showSpecLimits').checked,
+                            show_control_limits: document.getElementById('showControlLimits').checked
+                        }
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    currentPlotData = result.plot_data;
+                    renderPlot(currentPlotData);
+                    renderHistogram(currentPlotData);
+                    updateStatsPanel(currentPlotData);
+                } else {
+                    alert(`Error updating control limits: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                hideLoading();
+            }
         }
 
         // Render plot using Plotly (original function for initial load)
