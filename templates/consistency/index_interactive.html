@@ -1044,35 +1044,15 @@
                 n_samples: filteredIndices.length
             };
             
-            // Recalculate I-MR statistics for filtered data
+            // KEEP THE BACKEND CONTROL LIMITS - DO NOT RECALCULATE!
+            // The backend has already calculated the correct I-MR limits from stable data
+            // Just update the mean for display purposes, but keep the original control limits
             const values = filteredData.values;
             filteredData.mean = values.reduce((a, b) => a + b, 0) / values.length;
             
-            // Calculate I-MR control limits for filtered data
-            if (values.length >= 2) {
-                // Calculate moving ranges
-                const movingRanges = [];
-                for (let i = 1; i < values.length; i++) {
-                    movingRanges.push(Math.abs(values[i] - values[i-1]));
-                }
-                
-                // Calculate average moving range
-                const mrBar = movingRanges.reduce((a, b) => a + b, 0) / movingRanges.length;
-                
-                // Estimate process sigma using d2 = 1.128
-                const d2 = 1.128;
-                const sigmaHat = mrBar / d2;
-                
-                // Calculate I-MR control limits
-                filteredData.std = sigmaHat;
-                filteredData.ucl = filteredData.mean + 3 * sigmaHat;
-                filteredData.lcl = filteredData.mean - 3 * sigmaHat;
-            } else {
-                // Not enough data for I-MR chart
-                filteredData.std = 0;
-                filteredData.ucl = filteredData.mean;
-                filteredData.lcl = filteredData.mean;
-            }
+            // PRESERVE the backend-calculated control limits
+            // filteredData.ucl and filteredData.lcl are already correct from plotData
+            // filteredData.std is already correct from plotData
             
             // Recalculate indices for filtered data
             filteredData.pass_indices = [];

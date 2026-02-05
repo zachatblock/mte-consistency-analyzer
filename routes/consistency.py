@@ -244,7 +244,7 @@ def convert_numpy_to_python_types(obj):
         return obj
 
 def generate_histogram_bins(values, num_bins=20):
-    """Generate histogram bins with smart binning standardized around orders of magnitude."""
+    """Generate histogram bins with regular linear binning."""
     values = np.array(values)
     values = values[np.isfinite(values)]  # Remove any infinite or NaN values
     
@@ -253,48 +253,32 @@ def generate_histogram_bins(values, num_bins=20):
     
     min_val, max_val = np.min(values), np.max(values)
     print(f"DEBUG: Histogram data range: {min_val:.2f} to {max_val:.2f} ({len(values)} samples)")
+    print(f"DEBUG: Using linear binning")
     
-    # Check if we need logarithmic binning (wide dynamic range)
-    use_log_bins = (max_val / min_val > 100) and (min_val > 0)
-    print(f"DEBUG: Using {'logarithmic' if use_log_bins else 'linear'} binning (ratio: {max_val/min_val:.1f})")
+    # Linear binning with nice round numbers
+    data_range = max_val - min_val
     
-    if use_log_bins:
-        # Logarithmic binning with standardized edges
-        log_min = np.log10(min_val)
-        log_max = np.log10(max_val)
+    # Determine appropriate step size based on order of magnitude
+    if data_range > 0:
+        order_of_magnitude = 10 ** np.floor(np.log10(data_range))
+        nice_step = order_of_magnitude / 10  # Start with 1/10th of the order of magnitude
         
-        # Round to nice order-of-magnitude boundaries
-        log_min_rounded = np.floor(log_min * 2) / 2  # Round to nearest 0.5 decade
-        log_max_rounded = np.ceil(log_max * 2) / 2
+        # Adjust step size to get reasonable number of bins
+        while (data_range / nice_step) > num_bins * 1.5:
+            nice_step *= 2
+        while (data_range / nice_step) < num_bins * 0.5:
+            nice_step /= 2
         
-        # Create standardized log edges
-        log_edges = np.linspace(log_min_rounded, log_max_rounded, num_bins + 1)
-        bin_edges = 10 ** log_edges
+        # Round min/max to nice boundaries
+        nice_min = np.floor(min_val / nice_step) * nice_step
+        nice_max = np.ceil(max_val / nice_step) * nice_step
+        
+        # Generate nice bin edges
+        n_steps = int(np.ceil((nice_max - nice_min) / nice_step)) + 1
+        bin_edges = np.linspace(nice_min, nice_min + (n_steps - 1) * nice_step, n_steps)
     else:
-        # Linear binning with nice round numbers
-        data_range = max_val - min_val
-        
-        # Determine appropriate step size based on order of magnitude
-        if data_range > 0:
-            order_of_magnitude = 10 ** np.floor(np.log10(data_range))
-            nice_step = order_of_magnitude / 10  # Start with 1/10th of the order of magnitude
-            
-            # Adjust step size to get reasonable number of bins
-            while (data_range / nice_step) > num_bins * 1.5:
-                nice_step *= 2
-            while (data_range / nice_step) < num_bins * 0.5:
-                nice_step /= 2
-            
-            # Round min/max to nice boundaries
-            nice_min = np.floor(min_val / nice_step) * nice_step
-            nice_max = np.ceil(max_val / nice_step) * nice_step
-            
-            # Generate nice bin edges
-            n_steps = int(np.ceil((nice_max - nice_min) / nice_step)) + 1
-            bin_edges = np.linspace(nice_min, nice_min + (n_steps - 1) * nice_step, n_steps)
-        else:
-            # Fallback for zero range
-            bin_edges = np.linspace(min_val - 0.5, max_val + 0.5, num_bins + 1)
+        # Fallback for zero range
+        bin_edges = np.linspace(min_val - 0.5, max_val + 0.5, num_bins + 1)
     
     # Calculate histogram
     counts, _ = np.histogram(values, bins=bin_edges)
@@ -303,12 +287,8 @@ def generate_histogram_bins(values, num_bins=20):
     bin_centers = []
     bin_ranges = []
     for i in range(len(bin_edges) - 1):
-        if use_log_bins:
-            # Geometric mean for log scale
-            center = np.sqrt(bin_edges[i] * bin_edges[i + 1])
-        else:
-            # Arithmetic mean for linear scale
-            center = (bin_edges[i] + bin_edges[i + 1]) / 2
+        # Arithmetic mean for linear scale
+        center = (bin_edges[i] + bin_edges[i + 1]) / 2
         bin_centers.append(center)
         bin_ranges.append((bin_edges[i], bin_edges[i + 1]))
     
@@ -338,7 +318,7 @@ def generate_histogram_bins(values, num_bins=20):
         'counts': counts.tolist(),
         'total_samples': total_samples,
         'dominant_bin': dominant_bin,
-        'use_log_bins': use_log_bins
+        'use_log_bins': False  # Always linear now
     }
     
     return bin_centers, counts, histogram_data
@@ -772,6 +752,7 @@ def get_plot_data():
         if not plot_data:
             return jsonify({'error': 'Insufficient data for plotting'}), 400
         
+        print(f"DEBUG: Plot data refresh complete - returning updated control limits UCL: {plot_data['ucl']:.2f}, LCL: {plot_data['lcl']:.2f} to frontend")
         return jsonify({
             'success': True,
             'plot_data': plot_data
@@ -825,6 +806,7 @@ def update_control_limits():
         if not plot_data:
             return jsonify({'error': 'Insufficient data for plotting'}), 400
         
+        print(f"DEBUG: Control limits update complete - returning updated control limits UCL: {plot_data['ucl']:.2f}, LCL: {plot_data['lcl']:.2f} to frontend")
         return jsonify({
             'success': True,
             'plot_data': plot_data
