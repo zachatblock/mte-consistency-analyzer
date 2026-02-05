@@ -243,14 +243,76 @@ def convert_numpy_to_python_types(obj):
     else:
         return obj
 
-def calculate_imr_control_limits(values):
-    """Calculate I-MR (Individuals-Moving Range) control chart limits."""
+def generate_histogram_bins(values, num_bins=20):
+    """Generate histogram bins with smart binning for wide dynamic ranges."""
     values = np.array(values)
-    n = len(values)
+    values = values[np.isfinite(values)]  # Remove any infinite or NaN values
+    
+    if len(values) == 0:
+        return [], [], {}
+    
+    # Check if we need logarithmic binning (wide dynamic range)
+    min_val, max_val = np.min(values), np.max(values)
+    
+    # Use log binning if range spans more than 2 orders of magnitude and all values are positive
+    use_log_bins = (max_val / min_val > 100) and (min_val > 0)
+    
+    if use_log_bins:
+        # Logarithmic binning
+        log_min = np.log10(min_val)
+        log_max = np.log10(max_val)
+        log_edges = np.logspace(log_min, log_max, num_bins + 1)
+        bin_edges = log_edges
+    else:
+        # Linear binning
+        bin_edges = np.linspace(min_val, max_val, num_bins + 1)
+    
+    # Calculate histogram
+    counts, _ = np.histogram(values, bins=bin_edges)
+    
+    # Create bin info with centers and ranges
+    bin_centers = []
+    bin_ranges = []
+    for i in range(len(bin_edges) - 1):
+        center = (bin_edges[i] + bin_edges[i + 1]) / 2
+        bin_centers.append(center)
+        bin_ranges.append((bin_edges[i], bin_edges[i + 1]))
+    
+    # Find dominant bin (>51% of samples)
+    total_samples = len(values)
+    dominant_bin = None
+    for i, count in enumerate(counts):
+        if count / total_samples > 0.51:
+            dominant_bin = i
+            break
+    
+    histogram_data = {
+        'bin_edges': bin_edges.tolist(),
+        'bin_centers': bin_centers,
+        'bin_ranges': bin_ranges,
+        'counts': counts.tolist(),
+        'total_samples': total_samples,
+        'dominant_bin': dominant_bin,
+        'use_log_bins': use_log_bins
+    }
+    
+    return bin_centers, counts, histogram_data
+
+def calculate_imr_control_limits_from_stable_data(all_values, stable_indices=None):
+    """Calculate I-MR control limits from stable process data only."""
+    all_values = np.array(all_values)
+    
+    # If no stable indices provided, use all data (fallback to original behavior)
+    if stable_indices is None or len(stable_indices) == 0:
+        stable_values = all_values
+    else:
+        stable_values = all_values[stable_indices]
+    
+    n = len(stable_values)
     
     if n < 2:
-        # Not enough data for I-MR chart
-        mean_val = np.mean(values) if n > 0 else 0
+        # Not enough stable data for I-MR chart
+        mean_val = np.mean(all_values) if len(all_values) > 0 else 0
         return {
             'mean': float(mean_val),
             'ucl': float(mean_val),
@@ -258,26 +320,27 @@ def calculate_imr_control_limits(values):
             'sigma_hat': 0.0,
             'mr_bar': 0.0,
             'moving_ranges': [],
-            'method': 'insufficient_data'
+            'stable_data_count': n,
+            'method': 'insufficient_stable_data'
         }
     
-    # 1. Calculate center line (mean of individual measurements)
-    mean_val = np.mean(values)
+    # 1. Calculate center line from stable data only
+    mean_val = np.mean(stable_values)
     
-    # 2. Calculate moving ranges MR_i = |X_i - X_{i-1}|
+    # 2. Calculate moving ranges from stable data MR_i = |X_i - X_{i-1}|
     moving_ranges = []
     for i in range(1, n):
-        mr = abs(values[i] - values[i-1])
+        mr = abs(stable_values[i] - stable_values[i-1])
         moving_ranges.append(mr)
     
-    # 3. Calculate average moving range
+    # 3. Calculate average moving range from stable data
     mr_bar = np.mean(moving_ranges) if moving_ranges else 0
     
     # 4. Estimate process sigma using d2 = 1.128 for moving range of 2
     d2 = 1.128
     sigma_hat = mr_bar / d2 if mr_bar > 0 else 0
     
-    # 5. Calculate I-MR control limits
+    # 5. Calculate I-MR control limits based on stable process
     ucl = mean_val + 3 * sigma_hat
     lcl = mean_val - 3 * sigma_hat
     
@@ -288,15 +351,36 @@ def calculate_imr_control_limits(values):
         'sigma_hat': float(sigma_hat),
         'mr_bar': float(mr_bar),
         'moving_ranges': [float(mr) for mr in moving_ranges],
-        'method': 'imr_chart'
+        'stable_data_count': int(n),
+        'method': 'imr_from_stable_data'
     })
 
+def find_stable_data_indices(values, histogram_data, selected_bin=None):
+    """Find indices of data points that fall within the selected stable bin."""
+    values = np.array(values)
+    
+    # Use dominant bin if no specific bin selected
+    if selected_bin is None:
+        selected_bin = histogram_data.get('dominant_bin')
+    
+    if selected_bin is None or selected_bin >= len(histogram_data['bin_ranges']):
+        return []
+    
+    # Get the range for the selected bin
+    bin_min, bin_max = histogram_data['bin_ranges'][selected_bin]
+    
+    # Find indices of values that fall within this bin
+    stable_indices = np.where((values >= bin_min) & (values < bin_max))[0]
+    
+    return stable_indices.tolist()
+
 def generate_plot_data(test_id, test_data, plot_options=None):
-    """Generate plot data for a specific test without creating the actual plot."""
+    """Generate plot data for a specific test with histogram-based control limits."""
     if plot_options is None:
         plot_options = {
             'show_spec_limits': True,
-            'show_control_limits': True
+            'show_control_limits': True,
+            'selected_bin': None  # Auto-select dominant bin
         }
     
     df = pd.DataFrame(test_data)
@@ -323,13 +407,20 @@ def generate_plot_data(test_id, test_data, plot_options=None):
             lsl = data_point['low_limit']
             break
     
-    # Calculate I-MR control chart limits
-    imr_results = calculate_imr_control_limits(values)
+    # Generate histogram for stable data selection
+    bin_centers, bin_counts, histogram_data = generate_histogram_bins(values)
     
-    # Identify out-of-control points using I-MR limits
+    # Find stable data indices based on selected bin (or auto-selected dominant bin)
+    selected_bin = plot_options.get('selected_bin')
+    stable_indices = find_stable_data_indices(values, histogram_data, selected_bin)
+    
+    # Calculate I-MR control limits from stable data only
+    imr_results = calculate_imr_control_limits_from_stable_data(values, stable_indices)
+    
+    # Identify out-of-control points using stable-based I-MR limits
     out_of_control = (values > imr_results['ucl']) | (values < imr_results['lcl'])
     
-    # Categorize by EIF (Engineering Identification Flag) instead of hardcoded SN prefixes
+    # Categorize by EIF (Engineering Identification Flag)
     eif_categories = {}
     for i, sn in enumerate(serial_numbers):
         eif = extract_eif_from_serial(str(sn)) if sn else None
@@ -343,14 +434,15 @@ def generate_plot_data(test_id, test_data, plot_options=None):
         'values': values.tolist(),
         'test_results': test_results.tolist(),
         'serial_numbers': serial_numbers.tolist(),
-        'eif_categories': {str(k): v for k, v in eif_categories.items()},  # Convert keys to strings for JSON
+        'eif_categories': {str(k): v for k, v in eif_categories.items()},
         'pass_indices': np.where(test_results == 'PASS')[0].tolist(),
         'fail_indices': np.where(test_results == 'FAIL')[0].tolist(),
         'ooc_indices': np.where(out_of_control)[0].tolist(),
+        'stable_indices': stable_indices,  # Indices used for control limit calculation
         
-        # I-MR Statistics
+        # I-MR Statistics (from stable data)
         'mean': imr_results['mean'],
-        'std': imr_results['sigma_hat'],  # Use I-MR estimated sigma instead of sample std
+        'std': imr_results['sigma_hat'],
         'ucl': imr_results['ucl'],
         'lcl': imr_results['lcl'],
         'usl': float(usl) if usl is not None else None,
@@ -361,12 +453,24 @@ def generate_plot_data(test_id, test_data, plot_options=None):
         'sigma_hat': imr_results['sigma_hat'],
         'moving_ranges': imr_results['moving_ranges'],
         'control_method': imr_results['method'],
+        'stable_data_count': imr_results['stable_data_count'],
+        
+        # Histogram data
+        'histogram': {
+            'bin_centers': histogram_data['bin_centers'],
+            'bin_counts': histogram_data['counts'],
+            'bin_ranges': histogram_data['bin_ranges'],
+            'dominant_bin': histogram_data['dominant_bin'],
+            'selected_bin': selected_bin if selected_bin is not None else histogram_data['dominant_bin'],
+            'use_log_bins': histogram_data['use_log_bins'],
+            'total_samples': histogram_data['total_samples']
+        },
         
         # Counts
         'n_samples': int(n),
         'n_pass': int(np.sum(test_results == 'PASS')),
         'n_fail': int(np.sum(test_results == 'FAIL')),
-        'eif_counts': {str(k): len(v) for k, v in eif_categories.items()},  # Count by EIF instead of hardcoded SNs
+        'eif_counts': {str(k): len(v) for k, v in eif_categories.items()},
         'n_ooc': int(np.sum(out_of_control)),
         'usl_violations': int(np.sum(values > usl)) if usl is not None else 0,
         'lsl_violations': int(np.sum(values < lsl)) if lsl is not None else 0,
@@ -615,6 +719,59 @@ def get_plot_data():
     except Exception as e:
         print(f"DEBUG: Plot data generation error: {str(e)}")
         return jsonify({'error': f'Plot data generation error: {str(e)}'}), 500
+
+@consistency_bp.route('/update_control_limits', methods=['POST'])
+def update_control_limits():
+    """Update control limits based on selected histogram bin."""
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        test_id = data.get('test_id')
+        selected_bin = data.get('selected_bin')
+        plot_options = data.get('plot_options', {})
+        
+        if not session_id or session_id not in session:
+            return jsonify({'error': 'Invalid or expired session'}), 400
+        
+        if not test_id:
+            return jsonify({'error': 'Test ID required'}), 400
+        
+        if selected_bin is None:
+            return jsonify({'error': 'Selected bin required'}), 400
+        
+        # Load data from file
+        session_meta = session[session_id]
+        data_file = session_meta['data_file']
+        
+        if not os.path.exists(data_file):
+            return jsonify({'error': 'Session data file not found'}), 400
+        
+        with open(data_file, 'rb') as f:
+            session_data = pickle.load(f)
+        
+        all_tests = session_data['all_tests']
+        
+        if test_id not in all_tests:
+            return jsonify({'error': f'Test {test_id} not found'}), 404
+        
+        # Update plot options with selected bin
+        plot_options['selected_bin'] = selected_bin
+        
+        # Generate updated plot data
+        test_data = all_tests[test_id]
+        plot_data = generate_plot_data(test_id, test_data, plot_options)
+        
+        if not plot_data:
+            return jsonify({'error': 'Insufficient data for plotting'}), 400
+        
+        return jsonify({
+            'success': True,
+            'plot_data': plot_data
+        })
+        
+    except Exception as e:
+        print(f"DEBUG: Update control limits error: {str(e)}")
+        return jsonify({'error': f'Update control limits error: {str(e)}'}), 500
 
 @consistency_bp.route('/upload_log_file', methods=['POST'])
 def upload_log_file():
