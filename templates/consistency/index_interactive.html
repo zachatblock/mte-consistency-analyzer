@@ -1250,6 +1250,9 @@
             showLoading('Updating control limits...', `Calculating I-MR limits from bin ${binIndex}`);
             
             try {
+                // PRESERVE USER'S BIN SELECTION - Get current num_bins from UI
+                const currentNumBins = parseInt(document.getElementById('binWidthInput').value) || 5;
+                
                 const response = await fetch('/update_control_limits', {
                     method: 'POST',
                     headers: {
@@ -1261,7 +1264,8 @@
                         selected_bin: binIndex,
                         plot_options: {
                             show_spec_limits: document.getElementById('showSpecLimits').checked,
-                            show_control_limits: document.getElementById('showControlLimits').checked
+                            show_control_limits: document.getElementById('showControlLimits').checked,
+                            num_bins: currentNumBins  // PRESERVE user's bin count setting
                         }
                     })
                 });

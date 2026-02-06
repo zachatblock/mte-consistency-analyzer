@@ -31,8 +31,8 @@ warnings.filterwarnings('ignore')
 
 consistency_bp = Blueprint('consistency', __name__)
 
-# Simple state tracking file
-STATE_FILE = os.path.join(tempfile.gettempdir(), 'w3a_gui_state.json')
+# Simple state tracking file - in current directory
+STATE_FILE = 'w3a_gui_state.json'
 
 def load_gui_state():
     """Load GUI state from file."""
@@ -47,11 +47,21 @@ def load_gui_state():
 def save_gui_state(state):
     """Save GUI state to file."""
     try:
+        print(f"DEBUG: Attempting to save state to {STATE_FILE}")
+        print(f"DEBUG: State content to save: {state}")
         with open(STATE_FILE, 'w') as f:
             json.dump(state, f, indent=2)
-        print(f"DEBUG: State saved to {STATE_FILE}")
+        print(f"DEBUG: State successfully saved to {STATE_FILE}")
+        
+        # Verify what was actually written
+        with open(STATE_FILE, 'r') as f:
+            saved_content = f.read()
+        print(f"DEBUG: Verified saved content: {saved_content[:200]}...")
+        
     except Exception as e:
         print(f"DEBUG: Error saving state: {e}")
+        import traceback
+        print(f"DEBUG: Full traceback: {traceback.format_exc()}")
 
 def update_test_state(test_id, **kwargs):
     """Update state for a specific test."""
@@ -282,7 +292,7 @@ def convert_numpy_to_python_types(obj):
     else:
         return obj
 
-def generate_histogram_bins(values, num_bins=20):
+def generate_histogram_bins(values, num_bins=5):
     """Generate histogram bins with precise bin count control."""
     values = np.array(values)
     values = values[np.isfinite(values)]  # Remove any infinite or NaN values
@@ -470,7 +480,7 @@ def generate_plot_data(test_id, test_data, plot_options=None):
             'show_spec_limits': True,
             'show_control_limits': True,
             'selected_bin': None,  # Auto-select dominant bin
-            'num_bins': 20  # Default number of bins
+            'num_bins': 5  # Default number of bins
         }
     
     df = pd.DataFrame(test_data)
@@ -498,7 +508,7 @@ def generate_plot_data(test_id, test_data, plot_options=None):
             break
     
     # Generate histogram for stable data selection
-    num_bins = plot_options.get('num_bins', 20)  # Get bin count from options
+    num_bins = plot_options.get('num_bins', 5)  # Get bin count from options
     bin_centers, bin_counts, histogram_data = generate_histogram_bins(values, num_bins)
     
     # Find stable data indices based on selected bin (or auto-selected dominant bin)
@@ -582,14 +592,32 @@ def generate_plot_data(test_id, test_data, plot_options=None):
 def index():
     """Consistency plots main page - NEW INTERACTIVE VERSION."""
     # Clear state file when opening GUI (simple overwrite approach)
+    print(f"DEBUG: GUI launched - attempting to create state file: {STATE_FILE}")
+    print(f"DEBUG: Current working directory: {os.getcwd()}")
+    print(f"DEBUG: Full state file path: {os.path.abspath(STATE_FILE)}")
+    
     try:
-        save_gui_state({
+        initial_state = {
             'session_start': datetime.now().isoformat(),
             'tests': {}
-        })
-        print(f"DEBUG: Cleared GUI state file for new session")
+        }
+        save_gui_state(initial_state)
+        print(f"DEBUG: Successfully created GUI state file for new session")
+        
+        # Verify file was created
+        if os.path.exists(STATE_FILE):
+            file_size = os.path.getsize(STATE_FILE)
+            print(f"DEBUG: State file exists, size: {file_size} bytes")
+            with open(STATE_FILE, 'r') as f:
+                content = f.read()
+                print(f"DEBUG: State file content: {content[:200]}...")
+        else:
+            print(f"DEBUG: ERROR - State file was not created!")
+            
     except Exception as e:
-        print(f"DEBUG: Error clearing state: {e}")
+        print(f"DEBUG: Error creating state file: {e}")
+        import traceback
+        print(f"DEBUG: Full traceback: {traceback.format_exc()}")
     
     return render_template('consistency/index_interactive.html')
 
@@ -665,6 +693,25 @@ def process_data():
             }
             
             print(f"DEBUG: Session data stored successfully in file")
+            
+            # ADD ALL DETECTED TESTS TO STATE FILE
+            print(f"DEBUG: Adding {len(all_tests)} detected tests to state file")
+            state = load_gui_state()
+            if 'tests' not in state:
+                state['tests'] = {}
+            
+            # Add each detected test to the state with default settings
+            for test_id in all_tests.keys():
+                if test_id not in state['tests']:
+                    state['tests'][test_id] = {
+                        'detected_during_parse': True,
+                        'num_bins': 5,  # Default bins
+                        'selected_bin': None  # Will auto-select dominant bin
+                    }
+            
+            # Save the updated state with all tests
+            save_gui_state(state)
+            print(f"DEBUG: State file updated with all {len(all_tests)} detected tests")
             
             # Generate test list with sample counts (limit response size)
             test_list = []
@@ -806,15 +853,15 @@ def get_plot_data():
         if test_id not in all_tests:
             return jsonify({'error': f'Test {test_id} not found'}), 404
         
-        # Load saved state for this test
-        saved_state = get_test_state(test_id)
-        if saved_state:
-            # Restore previous settings
-            if 'selected_bin' in saved_state:
-                plot_options['selected_bin'] = saved_state['selected_bin']
-            if 'num_bins' in saved_state:
-                plot_options['num_bins'] = saved_state['num_bins']
-            print(f"DEBUG: Restored state for {test_id}: {saved_state}")
+        # DON'T restore saved state during interactive use - state is ONLY for PDF generation!
+        # The frontend should control all interactive behavior
+        
+        # If frontend provided new values, save them to state for PDF generation
+        if 'num_bins' in plot_options or 'selected_bin' in plot_options:
+            print(f"DEBUG: Frontend provided new values, saving to state for PDF: {plot_options}")
+            update_test_state(test_id, 
+                             selected_bin=plot_options.get('selected_bin'),
+                             num_bins=plot_options.get('num_bins', 5))
         
         # Generate plot data
         test_data = all_tests[test_id]
@@ -871,9 +918,17 @@ def update_control_limits():
         plot_options['selected_bin'] = selected_bin
         
         # Save state for this test
+        print(f"DEBUG: Saving state for test '{test_id}' - selected_bin: {selected_bin}, num_bins: {plot_options.get('num_bins', 5)}")
         update_test_state(test_id, 
                          selected_bin=selected_bin,
-                         num_bins=plot_options.get('num_bins', 20))
+                         num_bins=plot_options.get('num_bins', 5))
+        print(f"DEBUG: State save completed for test '{test_id}'")
+        
+        # Verify state was saved
+        if os.path.exists(STATE_FILE):
+            print(f"DEBUG: State file exists after save, size: {os.path.getsize(STATE_FILE)} bytes")
+        else:
+            print(f"DEBUG: ERROR - State file does not exist after save attempt!")
         
         # Generate updated plot data
         test_data = all_tests[test_id]
@@ -992,6 +1047,17 @@ def move_test_to_non_numeric():
         # Save updated data back to file
         with open(data_file, 'wb') as f:
             pickle.dump(session_data, f)
+        
+        # UPDATE STATE FILE TO REMOVE THE MOVED TEST
+        print(f"DEBUG: Updating state file to remove moved test '{test_id}' from numeric section")
+        state = load_gui_state()
+        if 'tests' in state and test_id in state['tests']:
+            # Remove the test from state since it's no longer numeric
+            del state['tests'][test_id]
+            save_gui_state(state)
+            print(f"DEBUG: Removed test '{test_id}' from state file (moved to non-numeric)")
+        else:
+            print(f"DEBUG: Test '{test_id}' was not found in state file")
         
         print(f"DEBUG: Moved test '{test_id}' from numeric to non-numeric ({len(non_numeric_data)} data points)")
         
