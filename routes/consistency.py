@@ -244,41 +244,30 @@ def convert_numpy_to_python_types(obj):
         return obj
 
 def generate_histogram_bins(values, num_bins=20):
-    """Generate histogram bins with regular linear binning."""
+    """Generate histogram bins with precise bin count control."""
     values = np.array(values)
     values = values[np.isfinite(values)]  # Remove any infinite or NaN values
     
     if len(values) == 0:
         return [], [], {}
     
+    # Enforce minimum bin count of 2
+    num_bins = max(2, int(num_bins))
+    
     min_val, max_val = np.min(values), np.max(values)
     print(f"DEBUG: Histogram data range: {min_val:.2f} to {max_val:.2f} ({len(values)} samples)")
-    print(f"DEBUG: Using linear binning")
+    print(f"DEBUG: Using precise linear binning with exactly {num_bins} bins")
     
-    # Linear binning with nice round numbers
+    # Precise linear binning - use exactly the requested number of bins
     data_range = max_val - min_val
     
-    # Determine appropriate step size based on order of magnitude
     if data_range > 0:
-        order_of_magnitude = 10 ** np.floor(np.log10(data_range))
-        nice_step = order_of_magnitude / 10  # Start with 1/10th of the order of magnitude
-        
-        # Adjust step size to get reasonable number of bins
-        while (data_range / nice_step) > num_bins * 1.5:
-            nice_step *= 2
-        while (data_range / nice_step) < num_bins * 0.5:
-            nice_step /= 2
-        
-        # Round min/max to nice boundaries
-        nice_min = np.floor(min_val / nice_step) * nice_step
-        nice_max = np.ceil(max_val / nice_step) * nice_step
-        
-        # Generate nice bin edges
-        n_steps = int(np.ceil((nice_max - nice_min) / nice_step)) + 1
-        bin_edges = np.linspace(nice_min, nice_min + (n_steps - 1) * nice_step, n_steps)
+        # Create exactly num_bins bins with equal width
+        bin_edges = np.linspace(min_val, max_val, num_bins + 1)
     else:
-        # Fallback for zero range
-        bin_edges = np.linspace(min_val - 0.5, max_val + 0.5, num_bins + 1)
+        # Fallback for zero range - create small spread around the single value
+        spread = max(abs(min_val) * 0.01, 0.5)  # 1% of value or 0.5, whichever is larger
+        bin_edges = np.linspace(min_val - spread, max_val + spread, num_bins + 1)
     
     # Calculate histogram
     counts, _ = np.histogram(values, bins=bin_edges)
@@ -384,6 +373,15 @@ def find_stable_data_indices(values, histogram_data, selected_bin=None):
     """Find indices of data points that fall within the selected stable bin."""
     values = np.array(values)
     
+    # Validate inputs
+    if len(values) == 0:
+        print("DEBUG: No values provided to find_stable_data_indices")
+        return []
+    
+    if not histogram_data or 'bin_ranges' not in histogram_data or len(histogram_data['bin_ranges']) == 0:
+        print("DEBUG: No valid histogram data available")
+        return []
+    
     # Use dominant bin if no specific bin selected
     if selected_bin is None:
         selected_bin = histogram_data.get('dominant_bin')
@@ -398,7 +396,8 @@ def find_stable_data_indices(values, histogram_data, selected_bin=None):
             print("DEBUG: No histogram data available")
             return []
     
-    if selected_bin >= len(histogram_data['bin_ranges']):
+    # Validate selected bin
+    if selected_bin < 0 or selected_bin >= len(histogram_data['bin_ranges']):
         print(f"DEBUG: Selected bin {selected_bin} out of range (max: {len(histogram_data['bin_ranges'])-1})")
         return []
     
@@ -408,9 +407,20 @@ def find_stable_data_indices(values, histogram_data, selected_bin=None):
     
     # Find indices of values that fall within this bin
     stable_indices = np.where((values >= bin_min) & (values < bin_max))[0]
+    
+    if len(stable_indices) == 0:
+        print(f"DEBUG: No samples found in selected bin {selected_bin}")
+        return []
+    
     stable_values = values[stable_indices]
     
-    print(f"DEBUG: Found {len(stable_indices)} stable samples (range: {np.min(stable_values):.2f} to {np.max(stable_values):.2f})")
+    # Safe min/max calculation for non-empty array
+    if len(stable_values) > 0:
+        min_val = np.min(stable_values)
+        max_val = np.max(stable_values)
+        print(f"DEBUG: Found {len(stable_indices)} stable samples (range: {min_val:.2f} to {max_val:.2f})")
+    else:
+        print(f"DEBUG: Found {len(stable_indices)} stable samples (empty range)")
     
     return stable_indices.tolist()
 
