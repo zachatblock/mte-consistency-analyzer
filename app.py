@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-W3A Flask Application
+MTE Consistency Analyzer
+Advanced statistical process control analysis with I-MR control charts.
 Main Flask application entry point with modular routing structure.
 """
 

@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}W3A Test Analysis - Home{% endblock %}
+{% block title %}MTE Consistency Analyzer - Home{% endblock %}
 
 {% block content %}
 <div class="hero-section">
     <div class="hero-content">
-        <h1>W3A Test Analysis</h1>
-        <p class="hero-subtitle">Manufacturing Test Data Analysis and Visualization</p>
+        <h1>MTE Consistency Analyzer</h1>
+        <p class="hero-subtitle">Advanced Statistical Process Control Analysis with I-MR Control Charts</p>
         <div class="hero-buttons">
-            <a href="{{ url_for('consistency.index') }}" class="btn btn-primary">Generate Consistency Plots</a>
+            <a href="{{ url_for('consistency.index') }}" class="btn btn-primary">Start Interactive Analysis</a>
             <a href="#features" class="btn btn-secondary">Learn More</a>
         </div>
     </div>
@@ -16,36 +16,36 @@
 
 <div class="features-section" id="features">
     <div class="container">
-        <h2>Features</h2>
+        <h2>Advanced Features</h2>
         <div class="features-grid">
             <div class="feature-card">
-                <h3>Consistency Plots</h3>
-                <p>Generate statistical process control charts with ±3σ limits for parametric test data.</p>
+                <h3>I-MR Control Charts</h3>
+                <p>Individual-Moving Range control charts with proper statistical control limits and stable process detection.</p>
                 <ul>
-                    <li>Automatic outlier detection</li>
-                    <li>Pass/Fail status tracking</li>
-                    <li>Serial number color coding</li>
-                    <li>Flexible test plan handling</li>
+                    <li>Automatic dominant bin detection</li>
+                    <li>Interactive bin selection for control limits</li>
+                    <li>EIF-based color coding and filtering</li>
+                    <li>Out-of-control point identification</li>
                 </ul>
             </div>
             <div class="feature-card">
-                <h3>Data Processing</h3>
-                <p>Process hundreds of test logs efficiently with robust error handling.</p>
+                <h3>Interactive Analysis</h3>
+                <p>Real-time plot generation with dynamic filtering and comprehensive test management.</p>
                 <ul>
-                    <li>Batch processing of zip files</li>
-                    <li>Numeric data filtering</li>
-                    <li>Missing data handling</li>
-                    <li>Summary statistics</li>
+                    <li>Live histogram bin adjustment</li>
+                    <li>EIF category filtering</li>
+                    <li>Test categorization management</li>
+                    <li>Keyboard navigation support</li>
                 </ul>
             </div>
             <div class="feature-card">
-                <h3>Visualization</h3>
-                <p>Clear, informative plots with detailed statistics and control limits.</p>
+                <h3>Professional Reports</h3>
+                <p>Comprehensive PDF reports with detailed statistics and methodology explanations.</p>
                 <ul>
-                    <li>Interactive plot generation</li>
-                    <li>Multiple output formats</li>
-                    <li>Customizable styling</li>
-                    <li>Export capabilities</li>
+                    <li>All tests included (no limits)</li>
+                    <li>Detailed I-MR methodology</li>
+                    <li>Process capability assessment</li>
+                    <li>Custom branding and dates</li>
                 </ul>
             </div>
         </div>
