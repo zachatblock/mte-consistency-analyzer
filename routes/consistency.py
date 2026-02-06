@@ -1130,7 +1130,7 @@ def generate_consistency_report():
                 ax.text(0.5, 0.6, f'Date: {report_date}', ha='center', va='center', 
                        fontsize=14, transform=ax.transAxes)
                 
-                type_text = 'Station Testing (3x20)' if report_type == 'station' else 'Process Testing (20+x1)'
+                type_text = 'Station Consistency Report' if report_type == 'station' else 'Process Consistency Report'
                 ax.text(0.5, 0.55, f'Type: {type_text}', ha='center', va='center', 
                        fontsize=14, transform=ax.transAxes)
                 
@@ -1285,7 +1285,16 @@ def generate_consistency_report():
                     ax4 = plt.subplot(2, 2, 4)
                     ax4.axis('off')
                     
-                    # Create statistics text
+                    # Create statistics text with safe formatting for None values
+                    # Safe formatting helper function
+                    def safe_format(value, format_spec='.3f'):
+                        if value is None:
+                            return 'None'
+                        try:
+                            return f"{value:{format_spec}}"
+                        except (ValueError, TypeError):
+                            return str(value)
+                    
                     stats_text = f"""Test: {test_id}
                     
 Sample Statistics:
@@ -1295,19 +1304,19 @@ Sample Statistics:
 • Out of Control: {plot_data['n_ooc']}
 
 Statistical Measures:
-• Mean: {plot_data['mean']:.3f}
-• Std Dev: {plot_data['std']:.3f}
-• Min: {np.min(values):.3f}
-• Max: {np.max(values):.3f}
+• Mean: {safe_format(plot_data['mean'])}
+• Std Dev: {safe_format(plot_data['std'])}
+• Min: {safe_format(np.min(values))}
+• Max: {safe_format(np.max(values))}
 
 Control Limits (I-MR):
-• UCL: {plot_data['ucl']:.3f}
-• LCL: {plot_data['lcl']:.3f}
+• UCL: {safe_format(plot_data['ucl'])}
+• LCL: {safe_format(plot_data['lcl'])}
 • Stable Data Count: {plot_data['stable_data_count']}
 
 Specification Limits:
-• USL: {plot_data['usl']:.3f if plot_data['usl'] is not None else 'None'}
-• LSL: {plot_data['lsl']:.3f if plot_data['lsl'] is not None else 'None'}"""
+• USL: {safe_format(plot_data['usl'])}
+• LSL: {safe_format(plot_data['lsl'])}"""
 
                     if plot_data['usl'] is not None or plot_data['lsl'] is not None:
                         stats_text += f"\n• USL Violations: {plot_data['usl_violations']}"

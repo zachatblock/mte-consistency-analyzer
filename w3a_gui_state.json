@@ -1,5 +1,5 @@
 {
-  "session_start": "2026-02-05T16:43:46.553088",
+  "session_start": "2026-02-05T16:49:04.734998",
   "tests": {
     "MEASURE_PP_VBUS_5V0_RES": {
       "detected_during_parse": true,
@@ -54,7 +54,7 @@
     "MEASURE_PP_CHG_VL_RES": {
       "detected_during_parse": true,
       "num_bins": 5,
-      "selected_bin": 0
+      "selected_bin": null
     },
     "MEASURE_PP_FG_VDD_1V8_RES": {
       "detected_during_parse": true,
@@ -78,8 +78,8 @@
     },
     "MEASURE_PP_TIMER_RES": {
       "detected_during_parse": true,
-      "num_bins": 5,
-      "selected_bin": null
+      "num_bins": 10,
+      "selected_bin": 0
     },
     "OVP_MEASURE_VBUS_CONN_6V": {
       "detected_during_parse": true,
@@ -217,11 +217,6 @@
       "selected_bin": null
     },
     "MEAS_CAP_TOUCH_TEST_DISCONNECTED": {
-      "detected_during_parse": true,
-      "num_bins": 5,
-      "selected_bin": null
-    },
-    "FIRST_ERROR_CODE": {
       "detected_during_parse": true,
       "num_bins": 5,
       "selected_bin": null
