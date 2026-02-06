@@ -941,6 +941,292 @@ def move_test_to_non_numeric():
         print(f"DEBUG: Move test error: {str(e)}")
         return jsonify({'error': f'Move test error: {str(e)}'}), 500
 
+@consistency_bp.route('/generate_consistency_report', methods=['POST'])
+def generate_consistency_report():
+    """Generate a comprehensive PDF consistency report."""
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        report_config = data.get('report_config', {})
+        
+        if not session_id or session_id not in session:
+            return jsonify({'error': 'Invalid or expired session'}), 400
+        
+        # Load session data
+        session_meta = session[session_id]
+        data_file = session_meta['data_file']
+        
+        if not os.path.exists(data_file):
+            return jsonify({'error': 'Session data file not found'}), 400
+        
+        with open(data_file, 'rb') as f:
+            session_data = pickle.load(f)
+        
+        all_tests = session_data['all_tests']
+        
+        # Extract report configuration
+        program_name = report_config.get('program_name', 'Unknown Program')
+        build_name = report_config.get('build_name', 'Unknown Build')
+        report_date = report_config.get('report_date', datetime.now().strftime('%Y-%m-%d'))
+        report_type = report_config.get('report_type', 'process')
+        report_title = report_config.get('report_title', 'Consistency Analysis Report')
+        
+        print(f"DEBUG: Generating PDF report for {len(all_tests)} tests")
+        
+        # Create temporary file for PDF
+        temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+        temp_pdf.close()
+        
+        try:
+            # Generate PDF using matplotlib
+            from matplotlib.backends.backend_pdf import PdfPages
+            import matplotlib.pyplot as plt
+            
+            with PdfPages(temp_pdf.name) as pdf:
+                # Title page
+                fig, ax = plt.subplots(figsize=(8.5, 11))
+                ax.axis('off')
+                
+                # Title page content
+                ax.text(0.5, 0.8, report_title, ha='center', va='center', 
+                       fontsize=20, fontweight='bold', transform=ax.transAxes)
+                
+                ax.text(0.5, 0.7, f'Program: {program_name}', ha='center', va='center', 
+                       fontsize=14, transform=ax.transAxes)
+                
+                ax.text(0.5, 0.65, f'Build: {build_name}', ha='center', va='center', 
+                       fontsize=14, transform=ax.transAxes)
+                
+                ax.text(0.5, 0.6, f'Date: {report_date}', ha='center', va='center', 
+                       fontsize=14, transform=ax.transAxes)
+                
+                type_text = 'Station Testing (3x20)' if report_type == 'station' else 'Process Testing (20+x1)'
+                ax.text(0.5, 0.55, f'Type: {type_text}', ha='center', va='center', 
+                       fontsize=14, transform=ax.transAxes)
+                
+                ax.text(0.5, 0.45, f'Total Tests Analyzed: {len(all_tests)}', ha='center', va='center', 
+                       fontsize=12, transform=ax.transAxes)
+                
+                ax.text(0.5, 0.4, f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}', 
+                       ha='center', va='center', fontsize=10, transform=ax.transAxes)
+                
+                pdf.savefig(fig, bbox_inches='tight')
+                plt.close(fig)
+                
+                # Generate plots for each test (limit to first 20 tests to avoid huge PDFs)
+                test_items = list(all_tests.items())[:20]  # Limit for performance
+                
+                for i, (test_id, test_data) in enumerate(test_items):
+                    print(f"DEBUG: Generating plots for test {i+1}/{len(test_items)}: {test_id}")
+                    
+                    # Generate plot data with default settings
+                    plot_options = {
+                        'show_spec_limits': True,
+                        'show_control_limits': True,
+                        'num_bins': 5
+                    }
+                    
+                    plot_data = generate_plot_data(test_id, test_data, plot_options)
+                    if not plot_data:
+                        continue
+                    
+                    # Create three plots per test on one page
+                    fig = plt.figure(figsize=(11, 8.5))  # Landscape orientation
+                    
+                    # Plot 1: Complete Data Analysis (full range)
+                    ax1 = plt.subplot(2, 2, 1)
+                    values = np.array(plot_data['values'])
+                    x_values = np.array(plot_data['x_values'])
+                    
+                    # Plot data points
+                    pass_indices = plot_data['pass_indices']
+                    fail_indices = plot_data['fail_indices']
+                    ooc_indices = plot_data['ooc_indices']
+                    
+                    if pass_indices:
+                        ax1.scatter(np.array(x_values)[pass_indices], values[pass_indices], 
+                                   c='blue', s=20, alpha=0.7, label='PASS')
+                    if fail_indices:
+                        ax1.scatter(np.array(x_values)[fail_indices], values[fail_indices], 
+                                   c='red', s=30, alpha=0.7, marker='^', label='FAIL')
+                    if ooc_indices:
+                        ax1.scatter(np.array(x_values)[ooc_indices], values[ooc_indices], 
+                                   c='orange', s=40, alpha=0.8, marker='x', label='Out of Control')
+                    
+                    # Add control limits
+                    if plot_data['ucl'] and plot_data['lcl']:
+                        ax1.axhline(y=plot_data['ucl'], color='orange', linestyle='--', alpha=0.8, label='UCL')
+                        ax1.axhline(y=plot_data['lcl'], color='orange', linestyle='--', alpha=0.8, label='LCL')
+                        ax1.axhline(y=plot_data['mean'], color='green', linestyle='-', alpha=0.8, label='Mean')
+                    
+                    # Add spec limits
+                    if plot_data['usl'] is not None:
+                        ax1.axhline(y=plot_data['usl'], color='red', linestyle='-', alpha=0.8, label='USL')
+                    if plot_data['lsl'] is not None:
+                        ax1.axhline(y=plot_data['lsl'], color='red', linestyle='-', alpha=0.8, label='LSL')
+                    
+                    ax1.set_title('Complete Data Analysis', fontsize=10, fontweight='bold')
+                    ax1.set_xlabel('Sample Number', fontsize=8)
+                    ax1.set_ylabel(f'Value {plot_data["unit"]}', fontsize=8)
+                    ax1.legend(fontsize=6, loc='upper right')
+                    ax1.grid(True, alpha=0.3)
+                    
+                    # Plot 2: Process Control View (zoomed to ±20% of max limit)
+                    ax2 = plt.subplot(2, 2, 2)
+                    
+                    # Calculate zoom range
+                    limit_values = []
+                    if plot_data['usl'] is not None:
+                        limit_values.append(plot_data['usl'])
+                    if plot_data['lsl'] is not None:
+                        limit_values.append(plot_data['lsl'])
+                    if plot_data['ucl']:
+                        limit_values.append(plot_data['ucl'])
+                    if plot_data['lcl']:
+                        limit_values.append(plot_data['lcl'])
+                    
+                    if limit_values:
+                        max_limit = max(abs(max(limit_values)), abs(min(limit_values)))
+                        zoom_range = max_limit * 1.2  # 20% more than the greater limit
+                        center = plot_data['mean']
+                        ax2.set_ylim(center - zoom_range, center + zoom_range)
+                    
+                    # Same plotting as above but zoomed
+                    if pass_indices:
+                        ax2.scatter(np.array(x_values)[pass_indices], values[pass_indices], 
+                                   c='blue', s=20, alpha=0.7, label='PASS')
+                    if fail_indices:
+                        ax2.scatter(np.array(x_values)[fail_indices], values[fail_indices], 
+                                   c='red', s=30, alpha=0.7, marker='^', label='FAIL')
+                    if ooc_indices:
+                        ax2.scatter(np.array(x_values)[ooc_indices], values[ooc_indices], 
+                                   c='orange', s=40, alpha=0.8, marker='x', label='Out of Control')
+                    
+                    # Add limits (same as above)
+                    if plot_data['ucl'] and plot_data['lcl']:
+                        ax2.axhline(y=plot_data['ucl'], color='orange', linestyle='--', alpha=0.8, label='UCL')
+                        ax2.axhline(y=plot_data['lcl'], color='orange', linestyle='--', alpha=0.8, label='LCL')
+                        ax2.axhline(y=plot_data['mean'], color='green', linestyle='-', alpha=0.8, label='Mean')
+                    
+                    if plot_data['usl'] is not None:
+                        ax2.axhline(y=plot_data['usl'], color='red', linestyle='-', alpha=0.8, label='USL')
+                    if plot_data['lsl'] is not None:
+                        ax2.axhline(y=plot_data['lsl'], color='red', linestyle='-', alpha=0.8, label='LSL')
+                    
+                    ax2.set_title('Process Control View', fontsize=10, fontweight='bold')
+                    ax2.set_xlabel('Sample Number', fontsize=8)
+                    ax2.set_ylabel(f'Value {plot_data["unit"]}', fontsize=8)
+                    ax2.grid(True, alpha=0.3)
+                    
+                    # Plot 3: Distribution Analysis (histogram)
+                    ax3 = plt.subplot(2, 2, 3)
+                    
+                    if 'histogram' in plot_data and plot_data['histogram']:
+                        hist_data = plot_data['histogram']
+                        bin_centers = hist_data['bin_centers']
+                        bin_counts = hist_data['bin_counts']
+                        
+                        # Create bar colors (highlight selected bin)
+                        colors = ['lightblue' if i == hist_data.get('selected_bin') else 'lightgray' 
+                                 for i in range(len(bin_counts))]
+                        
+                        ax3.bar(bin_centers, bin_counts, color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
+                        ax3.set_title('Distribution Analysis', fontsize=10, fontweight='bold')
+                        ax3.set_xlabel(f'Value {plot_data["unit"]}', fontsize=8)
+                        ax3.set_ylabel('Count', fontsize=8)
+                        ax3.grid(True, alpha=0.3)
+                    
+                    # Plot 4: Statistics table
+                    ax4 = plt.subplot(2, 2, 4)
+                    ax4.axis('off')
+                    
+                    # Create statistics text
+                    stats_text = f"""Test: {test_id}
+                    
+Sample Statistics:
+• Total Samples: {plot_data['n_samples']}
+• PASS: {plot_data['n_pass']} ({100*plot_data['n_pass']/plot_data['n_samples']:.1f}%)
+• FAIL: {plot_data['n_fail']} ({100*plot_data['n_fail']/plot_data['n_samples']:.1f}%)
+• Out of Control: {plot_data['n_ooc']}
+
+Statistical Measures:
+• Mean: {plot_data['mean']:.3f}
+• Std Dev: {plot_data['std']:.3f}
+• Min: {np.min(values):.3f}
+• Max: {np.max(values):.3f}
+
+Control Limits (I-MR):
+• UCL: {plot_data['ucl']:.3f}
+• LCL: {plot_data['lcl']:.3f}
+• Stable Data Count: {plot_data['stable_data_count']}
+
+Specification Limits:
+• USL: {plot_data['usl']:.3f if plot_data['usl'] is not None else 'None'}
+• LSL: {plot_data['lsl']:.3f if plot_data['lsl'] is not None else 'None'}"""
+
+                    if plot_data['usl'] is not None or plot_data['lsl'] is not None:
+                        stats_text += f"\n• USL Violations: {plot_data['usl_violations']}"
+                        stats_text += f"\n• LSL Violations: {plot_data['lsl_violations']}"
+                    
+                    ax4.text(0.05, 0.95, stats_text, transform=ax4.transAxes, fontsize=8, 
+                            verticalalignment='top', fontfamily='monospace')
+                    
+                    plt.suptitle(f'{test_id} - Consistency Analysis', fontsize=12, fontweight='bold')
+                    plt.tight_layout()
+                    pdf.savefig(fig, bbox_inches='tight')
+                    plt.close(fig)
+                
+                # Summary page
+                fig, ax = plt.subplots(figsize=(8.5, 11))
+                ax.axis('off')
+                
+                ax.text(0.5, 0.9, 'Analysis Summary', ha='center', va='center', 
+                       fontsize=16, fontweight='bold', transform=ax.transAxes)
+                
+                summary_text = f"""Report Generation Complete
+
+Total Tests Analyzed: {len(test_items)} (of {len(all_tests)} available)
+Report Type: {type_text}
+Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Each test includes:
+• Complete Data Analysis - Full range view of all data points
+• Process Control View - Zoomed view focused on control limits  
+• Distribution Analysis - Histogram showing data distribution
+• Statistical Summary - Key metrics and limit violations
+
+Control Limits Method:
+• I-MR (Individual-Moving Range) control charts
+• Calculated from stable process data (dominant histogram bin)
+• UCL/LCL based on ±3σ from process mean
+
+Note: This report shows the first {len(test_items)} tests ordered by sample count.
+Use the interactive web interface to analyze all {len(all_tests)} tests."""
+                
+                ax.text(0.1, 0.7, summary_text, ha='left', va='top', 
+                       fontsize=11, transform=ax.transAxes, fontfamily='monospace')
+                
+                pdf.savefig(fig, bbox_inches='tight')
+                plt.close(fig)
+            
+            print(f"DEBUG: PDF report generated successfully: {temp_pdf.name}")
+            
+            # Return the PDF file
+            return send_file(temp_pdf.name, 
+                           as_attachment=True, 
+                           download_name=f'{program_name}_{build_name}_Consistency_Report.pdf',
+                           mimetype='application/pdf')
+                           
+        except Exception as e:
+            # Clean up temp file on error
+            if os.path.exists(temp_pdf.name):
+                os.unlink(temp_pdf.name)
+            raise e
+            
+    except Exception as e:
+        print(f"DEBUG: PDF generation error: {str(e)}")
+        return jsonify({'error': f'PDF generation error: {str(e)}'}), 500
+
 @consistency_bp.route('/cleanup_session', methods=['POST'])
 def cleanup_session():
     """Clean up session data and temporary files."""

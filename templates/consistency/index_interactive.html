@@ -235,9 +235,9 @@
                                 </div>
                                 <div class="col-md-6">
                                     <div class="d-flex justify-content-end align-items-center">
-                                        <label for="binWidthInput" class="form-label me-2 mb-0 small">Bin Width:</label>
+                                        <label for="binWidthInput" class="form-label me-2 mb-0 small">Number of Bins:</label>
                                         <input type="number" class="form-control form-control-sm me-2" id="binWidthInput" 
-                                               style="width: 100px;" min="2" max="1000000000" value="20" step="1">
+                                               style="width: 100px;" min="2" max="1000000000" value="5" step="1">
                                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="updateHistogramBinWidth()">
                                             <i class="fas fa-sync"></i> Update
                                         </button>
@@ -267,6 +267,16 @@
                             <div id="stats-content"></div>
                         </div>
                     </div>
+
+                    <!-- Generate Report Button -->
+                    <div class="mt-4" id="report-button-panel">
+                        <button type="button" class="btn btn-success btn-lg" onclick="openReportModal()">
+                            <i class="fas fa-file-pdf"></i> Generate Consistency Report
+                        </button>
+                        <small class="text-muted d-block mt-2">
+                            Create a comprehensive PDF report with all analyzed tests and their statistics
+                        </small>
+                    </div>
                 </div>
             </div>
         </div>
@@ -280,6 +290,64 @@
             </div>
             <h5 id="loading-message">Processing data...</h5>
             <p id="loading-details" class="text-muted"></p>
+        </div>
+    </div>
+
+    <!-- Report Generation Modal -->
+    <div class="modal fade" id="reportModal" tabindex="-1" aria-labelledby="reportModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="reportModalLabel">Generate Consistency Report</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="reportForm">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="programName" class="form-label">Program Name</label>
+                                    <input type="text" class="form-control" id="programName" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="buildName" class="form-label">Build</label>
+                                    <input type="text" class="form-control" id="buildName" required>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="reportDate" class="form-label">Date</label>
+                                    <input type="date" class="form-control" id="reportDate" required>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="reportType" class="form-label">Report Type</label>
+                                    <select class="form-select" id="reportType" required>
+                                        <option value="">Select Report Type</option>
+                                        <option value="station">Station Testing (3x20)</option>
+                                        <option value="process">Process Testing (20+x1)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="reportTitle" class="form-label">Report Title (Auto-generated)</label>
+                            <input type="text" class="form-control" id="reportTitle" readonly style="background-color: #f8f9fa;">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="generatePdfBtn">
+                        <i class="fas fa-download"></i> Generate PDF Report
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1401,13 +1469,13 @@
                 return;
             }
 
-            const binWidth = parseInt(document.getElementById('binWidthInput').value);
-            if (isNaN(binWidth) || binWidth < 2 || binWidth > 1000000000) {
-                alert('Please enter a valid bin width between 2 and 1,000,000,000.');
+            const numBins = parseInt(document.getElementById('binWidthInput').value);
+            if (isNaN(numBins) || numBins < 2 || numBins > 1000000000) {
+                alert('Please enter a valid number of bins between 2 and 1,000,000,000.');
                 return;
             }
 
-            showLoading('Updating histogram...', `Regenerating histogram with ${binWidth} bins`);
+            showLoading('Updating histogram...', `Regenerating histogram with ${numBins} bins`);
 
             try {
                 const response = await fetch('/get_plot_data', {
@@ -1421,7 +1489,7 @@
                         plot_options: {
                             show_spec_limits: document.getElementById('showSpecLimits').checked,
                             show_control_limits: document.getElementById('showControlLimits').checked,
-                            num_bins: binWidth  // Pass the new bin width
+                            num_bins: numBins  // Pass the new number of bins
                         }
                     })
                 });
@@ -1446,6 +1514,122 @@
                 hideLoading();
             }
         }
+
+        // Report Generation Functions
+        function openReportModal() {
+            if (!sessionId) {
+                alert('Please process data first before generating a report.');
+                return;
+            }
+            
+            // Set default date to today
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('reportDate').value = today;
+            
+            // Clear form
+            document.getElementById('programName').value = '';
+            document.getElementById('buildName').value = '';
+            document.getElementById('reportType').value = '';
+            document.getElementById('reportTitle').value = '';
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('reportModal'));
+            modal.show();
+        }
+
+        // Auto-generate report title when form fields change
+        function updateReportTitle() {
+            const programName = document.getElementById('programName').value;
+            const buildName = document.getElementById('buildName').value;
+            const reportDate = document.getElementById('reportDate').value;
+            const reportType = document.getElementById('reportType').value;
+            
+            let title = '';
+            if (programName && buildName && reportDate && reportType) {
+                const dateFormatted = new Date(reportDate).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric'
+                });
+                
+                const typeText = reportType === 'station' ? 'Station Testing (3x20)' : 'Process Testing (20+x1)';
+                title = `${programName} ${buildName} - Consistency Analysis Report - ${typeText} - ${dateFormatted}`;
+            }
+            
+            document.getElementById('reportTitle').value = title;
+        }
+
+        // Add event listeners for auto-title generation
+        document.getElementById('programName').addEventListener('input', updateReportTitle);
+        document.getElementById('buildName').addEventListener('input', updateReportTitle);
+        document.getElementById('reportDate').addEventListener('change', updateReportTitle);
+        document.getElementById('reportType').addEventListener('change', updateReportTitle);
+
+        // Generate PDF Report
+        async function generatePdfReport() {
+            const programName = document.getElementById('programName').value.trim();
+            const buildName = document.getElementById('buildName').value.trim();
+            const reportDate = document.getElementById('reportDate').value;
+            const reportType = document.getElementById('reportType').value;
+            const reportTitle = document.getElementById('reportTitle').value.trim();
+            
+            // Validate form
+            if (!programName || !buildName || !reportDate || !reportType) {
+                alert('Please fill in all required fields.');
+                return;
+            }
+            
+            showLoading('Generating PDF Report...', 'This may take a few minutes depending on the number of tests');
+            
+            try {
+                const response = await fetch('/generate_consistency_report', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        report_config: {
+                            program_name: programName,
+                            build_name: buildName,
+                            report_date: reportDate,
+                            report_type: reportType,
+                            report_title: reportTitle
+                        }
+                    })
+                });
+
+                if (response.ok) {
+                    // Download the PDF
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `${programName}_${buildName}_Consistency_Report.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('reportModal'));
+                    modal.hide();
+                    
+                    alert('PDF report generated successfully!');
+                } else {
+                    const result = await response.json();
+                    alert(`Error generating report: ${result.error || 'Unknown error'}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Add event listener for PDF generation button
+        document.getElementById('generatePdfBtn').addEventListener('click', generatePdfReport);
 
         // Event listeners for plot controls
         document.getElementById('showSpecLimits').addEventListener('change', function() {
