@@ -488,7 +488,7 @@
                                     <div class="d-flex justify-content-end align-items-center">
                                         <label for="binWidthInput" class="form-label me-2 mb-0 small">Number of Bins:</label>
                                         <input type="number" class="form-control form-control-sm me-2" id="binWidthInput" 
-                                               style="width: 100px;" min="2" max="1000000000" value="5" step="1">
+                                               style="width: 100px;" min="1" max="1000000000" value="5" step="1">
                                         <button type="button" class="btn btn-sm btn-outline-primary" onclick="updateHistogramBinWidth()">
                                             <i class="fas fa-sync"></i> Update
                                         </button>
@@ -1725,8 +1725,8 @@
             }
 
             const numBins = parseInt(document.getElementById('binWidthInput').value);
-            if (isNaN(numBins) || numBins < 2 || numBins > 1000000000) {
-                alert('Please enter a valid number of bins between 2 and 1,000,000,000.');
+            if (isNaN(numBins) || numBins < 1 || numBins > 1000000000) {
+                alert('Please enter a valid number of bins between 1 and 1,000,000,000.');
                 return;
             }
 
