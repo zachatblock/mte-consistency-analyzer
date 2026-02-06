@@ -1090,6 +1090,18 @@ def generate_consistency_report():
                         'num_bins': 5
                     }
                     
+                    # Check if user made adjustments to this test
+                    saved_state = get_test_state(test_id)
+                    if saved_state:
+                        # Apply user's saved settings
+                        if 'selected_bin' in saved_state:
+                            plot_options['selected_bin'] = saved_state['selected_bin']
+                        if 'num_bins' in saved_state:
+                            plot_options['num_bins'] = saved_state['num_bins']
+                        print(f"DEBUG: PDF using saved state for {test_id}: {saved_state}")
+                    else:
+                        print(f"DEBUG: PDF using defaults for {test_id}")
+                    
                     plot_data = generate_plot_data(test_id, test_data, plot_options)
                     if not plot_data:
                         continue
