@@ -1,5 +1,5 @@
 {
-  "session_start": "2026-02-05T16:49:04.734998",
+  "session_start": "2026-02-05T16:53:53.064141",
   "tests": {
     "MEASURE_PP_VBUS_5V0_RES": {
       "detected_during_parse": true,
@@ -78,8 +78,8 @@
     },
     "MEASURE_PP_TIMER_RES": {
       "detected_during_parse": true,
-      "num_bins": 10,
-      "selected_bin": 0
+      "num_bins": 5,
+      "selected_bin": null
     },
     "OVP_MEASURE_VBUS_CONN_6V": {
       "detected_during_parse": true,
@@ -221,17 +221,7 @@
       "num_bins": 5,
       "selected_bin": null
     },
-    "TEST_CYCLE_TIME": {
-      "detected_during_parse": true,
-      "num_bins": 5,
-      "selected_bin": null
-    },
     "FIXTURE_ID": {
-      "detected_during_parse": true,
-      "num_bins": 5,
-      "selected_bin": null
-    },
-    "SLOT_ID": {
       "detected_during_parse": true,
       "num_bins": 5,
       "selected_bin": null

@@ -1143,8 +1143,9 @@ def generate_consistency_report():
                 pdf.savefig(fig, bbox_inches='tight')
                 plt.close(fig)
                 
-                # Generate plots for each test (limit to first 20 tests to avoid huge PDFs)
-                test_items = list(all_tests.items())[:20]  # Limit for performance
+                # Generate plots for all tests (or limit based on report config)
+                max_tests = report_config.get('max_tests_in_pdf', len(all_tests))  # Allow user to control limit
+                test_items = list(all_tests.items())[:max_tests]
                 
                 for i, (test_id, test_data) in enumerate(test_items):
                     print(f"DEBUG: Generating plots for test {i+1}/{len(test_items)}: {test_id}")
@@ -1337,25 +1338,57 @@ Specification Limits:
                 ax.text(0.5, 0.9, 'Analysis Summary', ha='center', va='center', 
                        fontsize=16, fontweight='bold', transform=ax.transAxes)
                 
-                summary_text = f"""Report Generation Complete
+                # Calculate summary statistics across all tests
+                total_samples = sum(len(test_data) for test_data in all_tests.values())
+                tests_with_limits = sum(1 for test_data in all_tests.values() 
+                                      if any(d.get('high_limit') is not None or d.get('low_limit') is not None 
+                                           for d in test_data))
+                
+                # Calculate overall pass/fail rates
+                all_pass = sum(sum(1 for d in test_data if d.get('test_result') == 'PASS') 
+                             for test_data in all_tests.values())
+                all_fail = sum(sum(1 for d in test_data if d.get('test_result') == 'FAIL') 
+                             for test_data in all_tests.values())
+                pass_rate = (all_pass / (all_pass + all_fail) * 100) if (all_pass + all_fail) > 0 else 0
+                
+                summary_text = f"""CONSISTENCY ANALYSIS SUMMARY
 
-Total Tests Analyzed: {len(test_items)} (of {len(all_tests)} available)
-Report Type: {type_text}
-Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Dataset Overview:
+• Total Tests Available: {len(all_tests)}
+• Total Data Points: {total_samples:,}
+• Tests with Specification Limits: {tests_with_limits}
+• Overall Pass Rate: {pass_rate:.1f}% ({all_pass:,} PASS, {all_fail:,} FAIL)
 
-Each test includes:
-• Complete Data Analysis - Full range view of all data points
-• Process Control View - Zoomed view focused on control limits  
-• Distribution Analysis - Histogram showing data distribution
-• Statistical Summary - Key metrics and limit violations
+Report Details:
+• Tests Analyzed in PDF: {len(test_items)}
+• Report Type: {type_text}
+• Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+• Program: {program_name}
+• Build: {build_name}
 
-Control Limits Method:
-• I-MR (Individual-Moving Range) control charts
-• Calculated from stable process data (dominant histogram bin)
-• UCL/LCL based on ±3σ from process mean
+Analysis Components (per test):
+• Complete Data Analysis - Full chronological view of all measurements
+• Process Control View - Focused view highlighting control limit violations
+• Distribution Analysis - Histogram showing measurement distribution patterns
+• Statistical Summary - Key metrics, control limits, and specification violations
 
-Note: This report shows the first {len(test_items)} tests ordered by sample count.
-Use the interactive web interface to analyze all {len(all_tests)} tests."""
+Statistical Control Method:
+• I-MR (Individual-Moving Range) Control Charts
+• Control limits calculated from stable process data only
+• Stable data identified using dominant histogram bin (>51% of samples)
+• UCL/LCL = Process Mean ± 3 × (Moving Range Average / d2 constant)
+• Moving Range calculated from consecutive stable measurements
+• d2 = 1.128 for subgroup size of 2 (consecutive measurements)
+
+Process Capability Assessment:
+• Out-of-Control points identified using I-MR limits
+• Specification limit violations tracked separately
+• Control vs. specification limits clearly differentiated
+• Stable process capability estimated from histogram-selected data
+
+Interactive Analysis:
+Use the web interface to analyze all {len(all_tests)} tests with full interactivity,
+custom bin selection, and real-time control limit recalculation."""
                 
                 ax.text(0.1, 0.7, summary_text, ha='left', va='top', 
                        fontsize=11, transform=ax.transAxes, fontfamily='monospace')
