@@ -300,8 +300,8 @@ def generate_histogram_bins(values, num_bins=5):
     if len(values) == 0:
         return [], [], {}
     
-    # Enforce minimum bin count of 2
-    num_bins = max(2, int(num_bins))
+    # Allow minimum bin count of 1 (though statistically not very useful)
+    num_bins = max(1, int(num_bins))
     
     min_val, max_val = np.min(values), np.max(values)
     print(f"DEBUG: Histogram data range: {min_val:.2f} to {max_val:.2f} ({len(values)} samples)")
