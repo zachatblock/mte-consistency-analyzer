@@ -555,16 +555,22 @@
                 <div class="modal-body">
                     <form id="reportForm">
                         <div class="row">
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <div class="mb-3">
                                     <label for="programName" class="form-label">Program Name</label>
                                     <input type="text" class="form-control" id="programName" required>
                                 </div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <div class="mb-3">
                                     <label for="buildName" class="form-label">Build</label>
                                     <input type="text" class="form-control" id="buildName" required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="stationName" class="form-label">Station Name</label>
+                                    <input type="text" class="form-control" id="stationName" required>
                                 </div>
                             </div>
                         </div>
@@ -1796,11 +1802,12 @@
         function updateReportTitle() {
             const programName = document.getElementById('programName').value;
             const buildName = document.getElementById('buildName').value;
+            const stationName = document.getElementById('stationName').value;
             const reportDate = document.getElementById('reportDate').value;
             const reportType = document.getElementById('reportType').value;
             
             let title = '';
-            if (programName && buildName && reportDate && reportType) {
+            if (programName && buildName && stationName && reportDate && reportType) {
                 const dateFormatted = new Date(reportDate).toLocaleDateString('en-US', {
                     year: 'numeric',
                     month: 'long',
@@ -1808,7 +1815,7 @@
                 });
                 
                 const typeText = reportType === 'station' ? 'Station Testing (3x20)' : 'Process Testing (20+x1)';
-                title = `${programName} ${buildName} - Consistency Analysis Report - ${typeText} - ${dateFormatted}`;
+                title = `${programName} ${buildName} ${stationName} - Consistency Analysis Report - ${typeText} - ${dateFormatted}`;
             }
             
             document.getElementById('reportTitle').value = title;
@@ -1817,6 +1824,7 @@
         // Add event listeners for auto-title generation
         document.getElementById('programName').addEventListener('input', updateReportTitle);
         document.getElementById('buildName').addEventListener('input', updateReportTitle);
+        document.getElementById('stationName').addEventListener('input', updateReportTitle);
         document.getElementById('reportDate').addEventListener('change', updateReportTitle);
         document.getElementById('reportType').addEventListener('change', updateReportTitle);
 
@@ -1824,12 +1832,13 @@
         async function generatePdfReport() {
             const programName = document.getElementById('programName').value.trim();
             const buildName = document.getElementById('buildName').value.trim();
+            const stationName = document.getElementById('stationName').value.trim();
             const reportDate = document.getElementById('reportDate').value;
             const reportType = document.getElementById('reportType').value;
             const reportTitle = document.getElementById('reportTitle').value.trim();
             
             // Validate form
-            if (!programName || !buildName || !reportDate || !reportType) {
+            if (!programName || !buildName || !stationName || !reportDate || !reportType) {
                 alert('Please fill in all required fields.');
                 return;
             }
@@ -1847,6 +1856,7 @@
                         report_config: {
                             program_name: programName,
                             build_name: buildName,
+                            station_name: stationName,
                             report_date: reportDate,
                             report_type: reportType,
                             report_title: reportTitle
@@ -1861,7 +1871,7 @@
                     const a = document.createElement('a');
                     a.style.display = 'none';
                     a.href = url;
-                    a.download = `${programName}_${buildName}_Consistency_Report.pdf`;
+                    a.download = `${programName}_${buildName}_${stationName}_Consistency_Report.pdf`;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);

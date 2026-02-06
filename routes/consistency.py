@@ -1097,6 +1097,7 @@ def generate_consistency_report():
         # Extract report configuration
         program_name = report_config.get('program_name', 'Unknown Program')
         build_name = report_config.get('build_name', 'Unknown Build')
+        station_name = report_config.get('station_name', 'Unknown Station')
         report_date = report_config.get('report_date', datetime.now().strftime('%Y-%m-%d'))
         report_type = report_config.get('report_type', 'process')
         report_title = report_config.get('report_title', 'Consistency Analysis Report')
@@ -1127,11 +1128,14 @@ def generate_consistency_report():
                 ax.text(0.5, 0.65, f'Build: {build_name}', ha='center', va='center', 
                        fontsize=14, transform=ax.transAxes)
                 
-                ax.text(0.5, 0.6, f'Date: {report_date}', ha='center', va='center', 
+                ax.text(0.5, 0.6, f'Station: {station_name}', ha='center', va='center', 
+                       fontsize=14, transform=ax.transAxes)
+                
+                ax.text(0.5, 0.55, f'Date: {report_date}', ha='center', va='center', 
                        fontsize=14, transform=ax.transAxes)
                 
                 type_text = 'Station Consistency Report' if report_type == 'station' else 'Process Consistency Report'
-                ax.text(0.5, 0.55, f'Type: {type_text}', ha='center', va='center', 
+                ax.text(0.5, 0.5, f'Type: {type_text}', ha='center', va='center', 
                        fontsize=14, transform=ax.transAxes)
                 
                 ax.text(0.5, 0.45, f'Total Tests Analyzed: {len(all_tests)}', ha='center', va='center', 
@@ -1401,7 +1405,7 @@ custom bin selection, and real-time control limit recalculation."""
             # Return the PDF file
             return send_file(temp_pdf.name, 
                            as_attachment=True, 
-                           download_name=f'{program_name}_{build_name}_Consistency_Report.pdf',
+                           download_name=f'{program_name}_{build_name}_{station_name}_Consistency_Report.pdf',
                            mimetype='application/pdf')
                            
         except Exception as e:
