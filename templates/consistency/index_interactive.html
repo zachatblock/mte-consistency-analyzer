@@ -229,7 +229,21 @@
                     <!-- Histogram Container -->
                     <div class="card mt-3" id="histogram-panel" style="display: none;">
                         <div class="card-header">
-                            <h6><i class="fas fa-chart-bar"></i> Data Distribution & Control Limit Selection</h6>
+                            <div class="row align-items-center">
+                                <div class="col-md-6">
+                                    <h6 class="mb-0"><i class="fas fa-chart-bar"></i> Data Distribution & Control Limit Selection</h6>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="d-flex justify-content-end align-items-center">
+                                        <label for="binWidthInput" class="form-label me-2 mb-0 small">Bin Width:</label>
+                                        <input type="number" class="form-control form-control-sm me-2" id="binWidthInput" 
+                                               style="width: 100px;" min="5" max="1000000000" value="20" step="1">
+                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="updateHistogramBinWidth()">
+                                            <i class="fas fa-sync"></i> Update
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div class="card-body">
                             <div id="histogram-container" style="height: 300px;">
@@ -238,7 +252,7 @@
                             <div class="mt-2">
                                 <small class="text-muted">
                                     <strong>Instructions:</strong> Click on a histogram bin to select it as the "stable process" for calculating I-MR control limits. 
-                                    Auto-selected bin (>51% of samples) is highlighted in blue.
+                                    Auto-selected bin (>51% of samples) is highlighted in blue. Adjust bin width above to change histogram resolution.
                                 </small>
                             </div>
                         </div>
@@ -1267,6 +1281,10 @@
                         Max: ${Math.max(...filteredData.values).toFixed(3)}<br>
                         Out of Control: ${filteredData.n_ooc}<br>
                         <br>
+                        <strong>I-MR Control Limits:</strong><br>
+                        UCL: ${filteredData.ucl.toFixed(3)}<br>
+                        LCL: ${filteredData.lcl.toFixed(3)}<br>
+                        <br>
                         ${limitsHtml}
             `;
             
@@ -1368,6 +1386,59 @@
                     
                 } else {
                     alert(`Error moving test: ${result.error}`);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Update histogram bin width
+        async function updateHistogramBinWidth() {
+            if (!currentPlotData) {
+                alert('No test selected. Please select a test first.');
+                return;
+            }
+
+            const binWidth = parseInt(document.getElementById('binWidthInput').value);
+            if (isNaN(binWidth) || binWidth < 5 || binWidth > 1000000000) {
+                alert('Please enter a valid bin width between 5 and 1,000,000,000.');
+                return;
+            }
+
+            showLoading('Updating histogram...', `Regenerating histogram with ${binWidth} bins`);
+
+            try {
+                const response = await fetch('/get_plot_data', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        test_id: currentPlotData.test_id,
+                        plot_options: {
+                            show_spec_limits: document.getElementById('showSpecLimits').checked,
+                            show_control_limits: document.getElementById('showControlLimits').checked,
+                            num_bins: binWidth  // Pass the new bin width
+                        }
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    currentPlotData = result.plot_data;
+                    
+                    // Re-render histogram with new bin width
+                    renderHistogram(currentPlotData);
+                    
+                    // Update the plot and stats with new data
+                    renderPlotWithEIFFilter(currentPlotData);
+                    updateStatsPanelWithEIFFilter(currentPlotData);
+                } else {
+                    alert(`Error updating histogram: ${result.error}`);
                 }
             } catch (error) {
                 alert(`Error: ${error.message}`);

@@ -420,7 +420,8 @@ def generate_plot_data(test_id, test_data, plot_options=None):
         plot_options = {
             'show_spec_limits': True,
             'show_control_limits': True,
-            'selected_bin': None  # Auto-select dominant bin
+            'selected_bin': None,  # Auto-select dominant bin
+            'num_bins': 20  # Default number of bins
         }
     
     df = pd.DataFrame(test_data)
@@ -448,7 +449,8 @@ def generate_plot_data(test_id, test_data, plot_options=None):
             break
     
     # Generate histogram for stable data selection
-    bin_centers, bin_counts, histogram_data = generate_histogram_bins(values)
+    num_bins = plot_options.get('num_bins', 20)  # Get bin count from options
+    bin_centers, bin_counts, histogram_data = generate_histogram_bins(values, num_bins)
     
     # Find stable data indices based on selected bin (or auto-selected dominant bin)
     selected_bin = plot_options.get('selected_bin')
