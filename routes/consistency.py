@@ -31,6 +31,45 @@ warnings.filterwarnings('ignore')
 
 consistency_bp = Blueprint('consistency', __name__)
 
+# Simple state tracking file
+STATE_FILE = os.path.join(tempfile.gettempdir(), 'w3a_gui_state.json')
+
+def load_gui_state():
+    """Load GUI state from file."""
+    try:
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"DEBUG: Error loading state: {e}")
+    return {}
+
+def save_gui_state(state):
+    """Save GUI state to file."""
+    try:
+        with open(STATE_FILE, 'w') as f:
+            json.dump(state, f, indent=2)
+        print(f"DEBUG: State saved to {STATE_FILE}")
+    except Exception as e:
+        print(f"DEBUG: Error saving state: {e}")
+
+def update_test_state(test_id, **kwargs):
+    """Update state for a specific test."""
+    state = load_gui_state()
+    if 'tests' not in state:
+        state['tests'] = {}
+    if test_id not in state['tests']:
+        state['tests'][test_id] = {}
+    
+    # Update with new values
+    state['tests'][test_id].update(kwargs)
+    save_gui_state(state)
+
+def get_test_state(test_id):
+    """Get state for a specific test."""
+    state = load_gui_state()
+    return state.get('tests', {}).get(test_id, {})
+
 def extract_sn_from_filename(filename):
     """Extract serial number from filename."""
     match = re.match(r'([\dA-Z]+)_', filename)
@@ -542,6 +581,16 @@ def generate_plot_data(test_id, test_data, plot_options=None):
 @consistency_bp.route('/')
 def index():
     """Consistency plots main page - NEW INTERACTIVE VERSION."""
+    # Clear state file when opening GUI (simple overwrite approach)
+    try:
+        save_gui_state({
+            'session_start': datetime.now().isoformat(),
+            'tests': {}
+        })
+        print(f"DEBUG: Cleared GUI state file for new session")
+    except Exception as e:
+        print(f"DEBUG: Error clearing state: {e}")
+    
     return render_template('consistency/index_interactive.html')
 
 @consistency_bp.route('/process_data', methods=['POST'])
@@ -757,6 +806,16 @@ def get_plot_data():
         if test_id not in all_tests:
             return jsonify({'error': f'Test {test_id} not found'}), 404
         
+        # Load saved state for this test
+        saved_state = get_test_state(test_id)
+        if saved_state:
+            # Restore previous settings
+            if 'selected_bin' in saved_state:
+                plot_options['selected_bin'] = saved_state['selected_bin']
+            if 'num_bins' in saved_state:
+                plot_options['num_bins'] = saved_state['num_bins']
+            print(f"DEBUG: Restored state for {test_id}: {saved_state}")
+        
         # Generate plot data
         test_data = all_tests[test_id]
         plot_data = generate_plot_data(test_id, test_data, plot_options)
@@ -810,6 +869,11 @@ def update_control_limits():
         
         # Update plot options with selected bin
         plot_options['selected_bin'] = selected_bin
+        
+        # Save state for this test
+        update_test_state(test_id, 
+                         selected_bin=selected_bin,
+                         num_bins=plot_options.get('num_bins', 20))
         
         # Generate updated plot data
         test_data = all_tests[test_id]
@@ -1067,7 +1131,8 @@ def generate_consistency_report():
                     
                     ax1.set_title('Complete Data Analysis', fontsize=10, fontweight='bold')
                     ax1.set_xlabel('Sample Number', fontsize=8)
-                    ax1.set_ylabel(f'Value{" (" + plot_data["unit"] + ")" if plot_data["unit"] else ""}', fontsize=8)
+                    unit_text = f' ({plot_data["unit"]})' if plot_data["unit"] else ''
+                    ax1.set_ylabel(f'Value{unit_text}', fontsize=8)
                     ax1.legend(fontsize=6, loc='upper right')
                     ax1.grid(True, alpha=0.3)
                     
@@ -1115,7 +1180,8 @@ def generate_consistency_report():
                     
                     ax2.set_title('Process Control View', fontsize=10, fontweight='bold')
                     ax2.set_xlabel('Sample Number', fontsize=8)
-                    ax2.set_ylabel(f'Value{" (" + plot_data["unit"] + ")" if plot_data["unit"] else ""}', fontsize=8)
+                    unit_text = f' ({plot_data["unit"]})' if plot_data["unit"] else ''
+                    ax2.set_ylabel(f'Value{unit_text}', fontsize=8)
                     ax2.grid(True, alpha=0.3)
                     
                     # Plot 3: Distribution Analysis (histogram)
@@ -1132,7 +1198,8 @@ def generate_consistency_report():
                         
                         ax3.bar(bin_centers, bin_counts, color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
                         ax3.set_title('Distribution Analysis', fontsize=10, fontweight='bold')
-                        ax3.set_xlabel(f'Value{" (" + plot_data["unit"] + ")" if plot_data["unit"] else ""}', fontsize=8)
+                        unit_text = f' ({plot_data["unit"]})' if plot_data["unit"] else ''
+                        ax3.set_xlabel(f'Value{unit_text}', fontsize=8)
                         ax3.set_ylabel('Count', fontsize=8)
                         ax3.grid(True, alpha=0.3)
                     
