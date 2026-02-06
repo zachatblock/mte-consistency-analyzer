@@ -1057,7 +1057,7 @@ def generate_consistency_report():
                     if plot_data['ucl'] and plot_data['lcl']:
                         ax1.axhline(y=plot_data['ucl'], color='orange', linestyle='--', alpha=0.8, label='UCL')
                         ax1.axhline(y=plot_data['lcl'], color='orange', linestyle='--', alpha=0.8, label='LCL')
-                        ax1.axhline(y=plot_data['mean'], color='green', linestyle='-', alpha=0.8, label='Mean')
+                        ax1.axhline(y=plot_data['mean'], color='green', linestyle='--', alpha=0.8, label='Mean')
                     
                     # Add spec limits
                     if plot_data['usl'] is not None:
@@ -1067,7 +1067,7 @@ def generate_consistency_report():
                     
                     ax1.set_title('Complete Data Analysis', fontsize=10, fontweight='bold')
                     ax1.set_xlabel('Sample Number', fontsize=8)
-                    ax1.set_ylabel(f'Value {plot_data["unit"]}', fontsize=8)
+                    ax1.set_ylabel(f'Value{" (" + plot_data["unit"] + ")" if plot_data["unit"] else ""}', fontsize=8)
                     ax1.legend(fontsize=6, loc='upper right')
                     ax1.grid(True, alpha=0.3)
                     
@@ -1106,7 +1106,7 @@ def generate_consistency_report():
                     if plot_data['ucl'] and plot_data['lcl']:
                         ax2.axhline(y=plot_data['ucl'], color='orange', linestyle='--', alpha=0.8, label='UCL')
                         ax2.axhline(y=plot_data['lcl'], color='orange', linestyle='--', alpha=0.8, label='LCL')
-                        ax2.axhline(y=plot_data['mean'], color='green', linestyle='-', alpha=0.8, label='Mean')
+                        ax2.axhline(y=plot_data['mean'], color='green', linestyle='--', alpha=0.8, label='Mean')
                     
                     if plot_data['usl'] is not None:
                         ax2.axhline(y=plot_data['usl'], color='red', linestyle='-', alpha=0.8, label='USL')
@@ -1115,7 +1115,7 @@ def generate_consistency_report():
                     
                     ax2.set_title('Process Control View', fontsize=10, fontweight='bold')
                     ax2.set_xlabel('Sample Number', fontsize=8)
-                    ax2.set_ylabel(f'Value {plot_data["unit"]}', fontsize=8)
+                    ax2.set_ylabel(f'Value{" (" + plot_data["unit"] + ")" if plot_data["unit"] else ""}', fontsize=8)
                     ax2.grid(True, alpha=0.3)
                     
                     # Plot 3: Distribution Analysis (histogram)
@@ -1132,7 +1132,7 @@ def generate_consistency_report():
                         
                         ax3.bar(bin_centers, bin_counts, color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
                         ax3.set_title('Distribution Analysis', fontsize=10, fontweight='bold')
-                        ax3.set_xlabel(f'Value {plot_data["unit"]}', fontsize=8)
+                        ax3.set_xlabel(f'Value{" (" + plot_data["unit"] + ")" if plot_data["unit"] else ""}', fontsize=8)
                         ax3.set_ylabel('Count', fontsize=8)
                         ax3.grid(True, alpha=0.3)
                     

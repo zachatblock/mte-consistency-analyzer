@@ -756,14 +756,14 @@
             
             // Control limit traces for legend (if enabled)
             if (plotData.plot_options.show_control_limits) {
-                // Process Mean (green line)
+                // Process Mean (green dashed line)
                 traces.push({
                     x: [0, plotData.n_samples - 1],
                     y: [plotData.mean, plotData.mean],
                     mode: 'lines',
                     type: 'scatter',
                     name: 'Process Mean',
-                    line: { color: 'green', width: 2 }
+                    line: { color: 'green', width: 2, dash: 'dash' }
                 });
                 
                 // UCL (orange dashed)
@@ -989,14 +989,14 @@
             
             // Control limit traces for legend (if enabled)
             if (filteredData.plot_options.show_control_limits) {
-                // Process Mean (green line)
+                // Process Mean (green dashed line)
                 traces.push({
                     x: [0, Math.max(...filteredData.x_values)],
                     y: [filteredData.mean, filteredData.mean],
                     mode: 'lines',
                     type: 'scatter',
                     name: 'Process Mean',
-                    line: { color: 'green', width: 2 }
+                    line: { color: 'green', width: 2, dash: 'dash' }
                 });
                 
                 // UCL (orange dashed)
